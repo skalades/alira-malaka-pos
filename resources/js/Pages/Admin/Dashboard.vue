@@ -18,8 +18,29 @@ const props = defineProps<{
 
 const chartRef = ref<HTMLCanvasElement | null>(null);
 const categoryChartRef = ref<HTMLCanvasElement | null>(null);
+const deferredPrompt = ref<any>(null);
+const isInstallable = ref(false);
+
+const installPWA = async () => {
+    if (!deferredPrompt.value) return;
+    deferredPrompt.value.prompt();
+    const { outcome } = await deferredPrompt.value.userChoice;
+    deferredPrompt.value = null;
+    isInstallable.value = false;
+};
 
 onMounted(() => {
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt.value = e;
+        isInstallable.value = true;
+    });
+
+    window.addEventListener('appinstalled', () => {
+        isInstallable.value = false;
+        deferredPrompt.value = null;
+    });
+
     // 1. Sales Trend Chart
     if (chartRef.value) {
         new Chart(chartRef.value, {
@@ -267,6 +288,14 @@ onMounted(() => {
                         <button class="h-14 bg-white text-slate-900 px-8 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-100 transition-all active:scale-95 flex items-center justify-center gap-3">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             Download Laporan
+                        </button>
+                        <button 
+                            v-if="isInstallable"
+                            @click="installPWA"
+                            class="h-14 bg-blue-600 text-white px-8 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-3 shadow-lg shadow-blue-600/20"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            Install Aplikasi POS
                         </button>
                     </div>
                 </div>
