@@ -18,7 +18,7 @@ class AdminController extends Controller
     {
         $stats = [
             'totalSales' => \App\Models\Transaction::sum(\DB::raw('amount_paid - change_amount')) ?? 0,
-            'orderCount' => Order::where('status', 'paid')->count(),
+            'orderCount' => Order::whereIn('status', ['paid', 'completed'])->count(),
             'menuCount' => Menu::count(),
             'occupiedTables' => Table::where('status', 'occupied')->count(),
         ];
@@ -43,7 +43,7 @@ class AdminController extends Controller
         $topMenus = \App\Models\OrderItem::select('menu_id', \DB::raw('SUM(quantity) as total_qty'))
             ->with('menu')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
-            ->where('orders.status', 'paid')
+            ->whereIn('orders.status', ['paid', 'completed'])
             ->groupBy('menu_id')
             ->orderByDesc('total_qty')
             ->limit(5)
@@ -60,7 +60,7 @@ class AdminController extends Controller
         $categorySales = Category::withCount(['menus as total_qty' => function ($query) {
             $query->join('order_items', 'menus.id', '=', 'order_items.menu_id')
                 ->join('orders', 'order_items.order_id', '=', 'orders.id')
-                ->where('orders.status', 'paid');
+                ->whereIn('orders.status', ['paid', 'completed']);
         }])
             ->get()
             ->map(function ($cat) {
