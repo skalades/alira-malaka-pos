@@ -701,7 +701,7 @@ const getStatusLabel = (status: string) => {
                     <!-- 0. QC Checklist (HIDDEN if not included) -->
                     <div v-if="includeQcInPrint && selectedOrder.order_items.some((i: any) => !printOnlyUnprinted || !i.is_printed)" class="print-page-break mb-10 border-b pb-8">
                         <div class="text-center mb-6">
-                            <h2 class="text-xl font-bold uppercase">QC CHECKLIST {{ printOnlyUnprinted ? '(BARU)' : '' }}</h2>
+                            <h2 class="text-xl font-bold uppercase">QC CHECKLIST {{ printOnlyUnprinted && selectedOrder.order_items.some((i: any) => i.is_printed) ? '(BARU)' : '' }}</h2>
                             <p>{{ new Date().toLocaleDateString('id-ID') }} {{ new Date().toLocaleTimeString('id-ID') }}</p>
                             <p>#{{ selectedOrder.order_number }}</p>
                             <p class="text-3xl font-black border-2 border-black inline-block px-4 py-2 mt-2">{{ selectedOrder.table ? 'MEJA ' + selectedOrder.table.table_number : 'TAKEAWAY ' }}</p>
@@ -725,7 +725,7 @@ const getStatusLabel = (status: string) => {
                         <template v-for="cat in selectedOrderCategories" :key="cat">
                             <div v-if="getItemsByCategory(selectedOrder.order_items.filter((i: any) => !printOnlyUnprinted || !i.is_printed), cat).length > 0" class="print-page-break mb-10 border-b pb-8">
                                 <div class="text-center mb-6">
-                                    <h2 class="text-xl font-bold uppercase">TIKET {{ cat }} {{ printOnlyUnprinted ? '(BARU)' : '' }}</h2>
+                                    <h2 class="text-xl font-bold uppercase">TIKET {{ cat }} {{ printOnlyUnprinted && selectedOrder.order_items.some((i: any) => i.is_printed) ? '(BARU)' : '' }}</h2>
                                     <p>{{ new Date().toLocaleDateString('id-ID') }} {{ new Date().toLocaleTimeString('id-ID') }}</p>
                                     <p>#{{ selectedOrder.order_number }}</p>
                                     <p class="text-3xl font-black border-2 border-black inline-block px-4 py-2 mt-2">{{ selectedOrder.table ? 'MEJA ' + selectedOrder.table.table_number : 'TAKEAWAY ' }}</p>
@@ -1010,7 +1010,11 @@ const getStatusLabel = (status: string) => {
                                 class="h-12 lg:h-14 bg-amber-50 text-amber-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-amber-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11l-8 8-4-4m0-8l8 8 4-4"></path></svg>
-                                {{ (order.order_items as any[]).some((i: any) => !i.is_printed) ? `CETAK ITEM BARU (${(order.order_items as any[]).filter((i: any) => !i.is_printed).length})` : 'CETAK DAPUR' }}
+                                {{ 
+                                    (order.order_items as any[]).every((i: any) => !i.is_printed) || (order.order_items as any[]).every((i: any) => i.is_printed)
+                                    ? 'CETAK DAPUR' 
+                                    : `CETAK ITEM BARU (${(order.order_items as any[]).filter((i: any) => !i.is_printed).length})` 
+                                }}
                             </button>
 
                             <button 

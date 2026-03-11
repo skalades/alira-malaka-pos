@@ -192,7 +192,7 @@ const buildReceipt = (
         if (items.length === 0) return false;
 
         builder.alignCenter()
-            .bold().fontSize(2, 2).line(`TIKET ${categoryName.toUpperCase()}`).fontSize(1, 1).bold(false)
+            .bold().fontSize(2, 2).line(`TIKET ${categoryName.toUpperCase()}${onlyUnprinted && order.order_items.some((i: any) => i.is_printed) ? ' (BARU)' : ''}`).fontSize(1, 1).bold(false)
             .line(new Date().toLocaleDateString('id-ID') + ' ' + new Date().toLocaleTimeString('id-ID'))
             .line(`Pesanan: #${order.order_number}`)
             .line(order.table ? `MEJA ${order.table.table_number}` : 'BUNGKUS')
