@@ -17,26 +17,64 @@ class AdminController extends Controller
     public function dashboard()
     {
         $stats = [
-            'totalSales' => \App\Models\Transaction::sum('amount_paid') ?? 0,
+            'totalSales' => \App\Models\Transaction::sum(\DB::raw('amount_paid - change_amount')) ?? 0,
             'orderCount' => Order::where('status', 'paid')->count(),
             'menuCount' => Menu::count(),
             'occupiedTables' => Table::where('status', 'occupied')->count(),
         ];
 
-        // dummy sales data for chart if none exists
-        $salesData = [
-            ['date' => 'Sen', 'total' => 1200000],
-            ['date' => 'Sel', 'total' => 1500000],
-            ['date' => 'Rab', 'total' => 800000],
-            ['date' => 'Kam', 'total' => 2100000],
-            ['date' => 'Jum', 'total' => 1900000],
-            ['date' => 'Sab', 'total' => 3200000],
-            ['date' => 'Min', 'total' => 2800000],
-        ];
+        // Real sales data for the last 7 days
+        $salesData = \App\Models\Transaction::select(
+            \DB::raw('DATE(transaction_time) as date'),
+            \DB::raw('SUM(amount_paid - change_amount) as total')
+        )
+            ->where('transaction_time', '>=', now()->subDays(6)->startOfDay())
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'date' => \Carbon\Carbon::parse($item->date)->translatedFormat('D'),
+                    'total' => (int) $item->total
+                ];
+            });
+
+        // Top 5 Selling Menus
+        $topMenus = \App\Models\OrderItem::select('menu_id', \DB::raw('SUM(quantity) as total_qty'))
+            ->with('menu')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->where('orders.status', 'paid')
+            ->groupBy('menu_id')
+            ->orderByDesc('total_qty')
+            ->limit(5)
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'name' => $item->menu->name ?? 'Unknown',
+                    'quantity' => (int) $item->total_qty,
+                    'revenue' => (int) ($item->total_qty * ($item->menu->price ?? 0))
+                ];
+            });
+
+        // Sales by Category
+        $categorySales = Category::withCount(['menus as total_qty' => function ($query) {
+            $query->join('order_items', 'menus.id', '=', 'order_items.menu_id')
+                ->join('orders', 'order_items.order_id', '=', 'orders.id')
+                ->where('orders.status', 'paid');
+        }])
+            ->get()
+            ->map(function ($cat) {
+                return [
+                    'name' => $cat->name,
+                    'value' => (int) $cat->total_qty
+                ];
+            })->filter(fn($item) => $item['value'] > 0)->values();
 
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
-            'salesData' => $salesData
+            'salesData' => $salesData,
+            'topMenus' => $topMenus,
+            'categorySales' => $categorySales
         ]);
     }
 
