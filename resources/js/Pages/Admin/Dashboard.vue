@@ -60,7 +60,7 @@ onMounted(() => {
                         cornerRadius: 12,
                         displayColors: false,
                         callbacks: {
-                            label: (context) => `Rp ${context.parsed.y.toLocaleString('id-ID')}`
+                            label: (context: any) => `Rp ${(context.parsed.y ?? 0).toLocaleString('id-ID')}`
                         }
                     }
                 },
@@ -94,11 +94,11 @@ onMounted(() => {
                 datasets: [{
                     data: props.categorySales.map(c => c.value),
                     backgroundColor: ['#2563eb', '#8b5cf6', '#ec4899', '#f97316', '#10b981'],
-                    borderWidth: 0,
-                    cutout: '75%'
+                    borderWidth: 0
                 }]
             },
             options: {
+                cutout: '75%',
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
