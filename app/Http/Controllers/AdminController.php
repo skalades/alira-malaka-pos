@@ -40,7 +40,10 @@ class AdminController extends Controller
             });
 
         // Top 5 Selling Menus
-        $topMenus = \App\Models\OrderItem::select('menu_id', \DB::raw('SUM(quantity) as total_qty'))
+        $topMenus = \App\Models\OrderItem::select('menu_id', 
+                \DB::raw('SUM(quantity) as total_qty'),
+                \DB::raw('SUM(quantity * price_at_time) as total_revenue')
+            )
             ->with('menu')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->whereIn('orders.status', ['paid', 'completed'])
@@ -52,7 +55,7 @@ class AdminController extends Controller
                 return [
                     'name' => $item->menu->name ?? 'Unknown',
                     'quantity' => (int) $item->total_qty,
-                    'revenue' => (int) ($item->total_qty * ($item->menu->price ?? 0))
+                    'revenue' => (int) $item->total_revenue
                 ];
             });
 
