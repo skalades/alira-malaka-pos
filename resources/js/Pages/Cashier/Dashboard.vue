@@ -1010,7 +1010,7 @@ const getStatusLabel = (status: string) => {
                                 class="h-12 lg:h-14 bg-amber-50 text-amber-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-amber-100 transition-all active:scale-95 flex items-center justify-center gap-2"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11l-8 8-4-4m0-8l8 8 4-4"></path></svg>
-                                {{ order.order_items.some(i => !i.is_printed) ? `CETAK ITEM BARU (${order.order_items.filter(i => !i.is_printed).length})` : 'CETAK DAPUR' }}
+                                {{ (order.order_items as any[]).some((i: any) => !i.is_printed) ? `CETAK ITEM BARU (${(order.order_items as any[]).filter((i: any) => !i.is_printed).length})` : 'CETAK DAPUR' }}
                             </button>
 
                             <button 
