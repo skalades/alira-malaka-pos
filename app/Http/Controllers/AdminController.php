@@ -7,6 +7,7 @@ use App\Models\Menu;
 use App\Models\Order;
 use App\Models\Table;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 use App\Models\Setting;
@@ -277,6 +278,7 @@ class AdminController extends Controller
                 if (!isset($itemizedSales[$menuId])) {
                     $itemizedSales[$menuId] = [
                         'name' => $item->menu->name,
+                        'stock' => $item->menu->stock,
                         'quantity' => 0,
                         'revenue' => 0
                     ];
@@ -353,6 +355,7 @@ class AdminController extends Controller
                 if (!isset($itemizedSales[$menuId])) {
                     $itemizedSales[$menuId] = [
                         'name' => $item->menu->name,
+                        'stock' => $item->menu->stock,
                         'quantity' => 0,
                         'revenue' => 0
                     ];
@@ -410,14 +413,19 @@ class AdminController extends Controller
     public function deleteTransaction(\App\Models\Transaction $transaction)
     {
         \DB::transaction(function () use ($transaction) {
-            // Delete associated order and its items (cascading if set in DB, but safe to do here)
+            // Restore stock before deleting associated order and its items
             if ($transaction->order) {
+                foreach ($transaction->order->orderItems as $item) {
+                    if ($item->menu) {
+                        $item->menu->increment('stock', $item->quantity);
+                    }
+                }
                 $transaction->order->orderItems()->delete();
                 $transaction->order->delete();
             }
             $transaction->delete();
         });
 
-        return back()->with('success', 'Transaksi dan pesanan terkait berhasil dihapus.');
+        return back()->with('success', 'Transaksi dan pesanan terkait berhasil dihapus. Stok telah dikembalikan.');
     }
 }

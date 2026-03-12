@@ -1,7 +1,7 @@
-@php
+<?php
     $taxEnabled = \App\Models\Setting::get('tax_enabled', '0') === '1';
     $taxPercentage = (float)\App\Models\Setting::get('tax_percentage', '10');
-@endphp
+?>
 <!DOCTYPE html>
 <html>
 <head>
@@ -21,9 +21,9 @@
 </head>
 <body>
     <div class="header">
-        <h1>{{ $shopName }}</h1>
+        <h1><?php echo e($shopName); ?></h1>
         <p>LAPORAN PENJUALAN</p>
-        <p>Periode: {{ date('d/m/Y', strtotime($startDate)) }} - {{ date('d/m/Y', strtotime($endDate)) }}</p>
+        <p>Periode: <?php echo e(date('d/m/Y', strtotime($startDate))); ?> - <?php echo e(date('d/m/Y', strtotime($endDate))); ?></p>
     </div>
 
     <!-- Shift Summary Section -->
@@ -32,11 +32,11 @@
         <table>
             <tr>
                 <td style="width: 50%; background-color: #f9f9f9; font-weight: bold;">TOTAL BUKA KAS (Opening)</td>
-                <td class="text-right">Rp {{ number_format($totalOpening, 0, ',', '.') }}</td>
+                <td class="text-right">Rp <?php echo e(number_format($totalOpening, 0, ',', '.')); ?></td>
             </tr>
             <tr>
                 <td style="width: 50%; background-color: #f9f9f9; font-weight: bold;">TOTAL TUTUP KAS (Closing)</td>
-                <td class="text-right">Rp {{ number_format($totalClosing, 0, ',', '.') }}</td>
+                <td class="text-right">Rp <?php echo e(number_format($totalClosing, 0, ',', '.')); ?></td>
             </tr>
         </table>
     </div>
@@ -52,19 +52,19 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($itemizedSales as $item)
+            <?php $__currentLoopData = $itemizedSales; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $item): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                 <tr>
-                    <td>{{ $item['name'] }}</td>
-                    <td class="text-right" @if($item['stock'] <= 5) style="color: red; font-weight: bold;" @endif>{{ $item['stock'] }}</td>
-                    <td class="text-right">{{ $item['quantity'] }}</td>
-                    <td class="text-right">Rp {{ number_format($item['revenue'], 0, ',', '.') }}</td>
+                    <td><?php echo e($item['name']); ?></td>
+                    <td class="text-right" <?php if($item['stock'] <= 5): ?> style="color: red; font-weight: bold;" <?php endif; ?>><?php echo e($item['stock']); ?></td>
+                    <td class="text-right"><?php echo e($item['quantity']); ?></td>
+                    <td class="text-right">Rp <?php echo e(number_format($item['revenue'], 0, ',', '.')); ?></td>
                 </tr>
-            @endforeach
+            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
         </tbody>
         <tfoot>
             <tr class="total-row">
                 <td colspan="3" class="text-right">TOTAL PENDAPATAN (REVENUE):</td>
-                <td class="text-right">Rp {{ number_format($totalRevenue, 0, ',', '.') }}</td>
+                <td class="text-right">Rp <?php echo e(number_format($totalRevenue, 0, ',', '.')); ?></td>
             </tr>
         </tfoot>
     </table>
@@ -82,27 +82,27 @@
             <tbody>
                 <tr>
                     <td>TUNAI (CASH)</td>
-                    <td class="text-right">Rp {{ number_format($paymentBreakdown['cash'], 0, ',', '.') }}</td>
+                    <td class="text-right">Rp <?php echo e(number_format($paymentBreakdown['cash'], 0, ',', '.')); ?></td>
                 </tr>
                 <tr>
                     <td>QRIS</td>
-                    <td class="text-right">Rp {{ number_format($paymentBreakdown['qris'], 0, ',', '.') }}</td>
+                    <td class="text-right">Rp <?php echo e(number_format($paymentBreakdown['qris'], 0, ',', '.')); ?></td>
                 </tr>
                 <tr>
                     <td>TRANSFER</td>
-                    <td class="text-right">Rp {{ number_format($paymentBreakdown['transfer'], 0, ',', '.') }}</td>
+                    <td class="text-right">Rp <?php echo e(number_format($paymentBreakdown['transfer'], 0, ',', '.')); ?></td>
                 </tr>
-                @if(isset($paymentBreakdown['other']) && $paymentBreakdown['other'] > 0)
+                <?php if(isset($paymentBreakdown['other']) && $paymentBreakdown['other'] > 0): ?>
                 <tr>
                     <td>LAINNYA</td>
-                    <td class="text-right">Rp {{ number_format($paymentBreakdown['other'], 0, ',', '.') }}</td>
+                    <td class="text-right">Rp <?php echo e(number_format($paymentBreakdown['other'], 0, ',', '.')); ?></td>
                 </tr>
-                @endif
+                <?php endif; ?>
             </tbody>
             <tfoot>
                 <tr class="total-row">
                     <td class="text-right">TOTAL KESELURUHAN:</td>
-                    <td class="text-right">Rp {{ number_format($totalRevenue, 0, ',', '.') }}</td>
+                    <td class="text-right">Rp <?php echo e(number_format($totalRevenue, 0, ',', '.')); ?></td>
                 </tr>
             </tfoot>
         </table>
@@ -112,14 +112,15 @@
         <table style="border: none;">
             <tr style="font-size: 16px; font-weight: bold;">
                 <td style="border: none;">GRAND TOTAL PENDAPATAN</td>
-                <td style="border: none; color: #2563eb;" class="text-right">Rp {{ number_format($totalRevenue, 0, ',', '.') }}</td>
+                <td style="border: none; color: #2563eb;" class="text-right">Rp <?php echo e(number_format($totalRevenue, 0, ',', '.')); ?></td>
             </tr>
         </table>
     </div>
 
     <div class="footer">
-        <p>Dicetak pada: {{ date('d/m/Y H:i:s') }}</p>
+        <p>Dicetak pada: <?php echo e(date('d/m/Y H:i:s')); ?></p>
         <p>Laporan ini dihasilkan secara otomatis oleh ALIRA MALAKA POS System.</p>
     </div>
 </body>
 </html>
+<?php /**PATH C:\Users\skala\OneDrive\Documents\project\alira malaka\resources\views/reports/sales.blade.php ENDPATH**/ ?>

@@ -6,6 +6,7 @@ use App\Events\OrderStatusUpdated;
 use App\Models\Menu;
 use App\Models\Order;
 use App\Models\Table;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -65,19 +66,42 @@ class CashierController extends Controller
             'status' => 'required|in:pending,processing,ready,paid,completed,cancelled'
         ]);
 
-        $order->update(['status' => $request->status]);
+        $oldStatus = $order->status;
+        $newStatus = $request->status;
 
-        if ($order->table && in_array($request->status, ['completed', 'cancelled'])) {
-            $order->table->update(['status' => 'available']);
-            
-            // If order is linked to a reservation, mark it as completed
-            if ($order->reservation_id) {
-                $order->reservation->update(['status' => 'completed']);
+        return \DB::transaction(function () use ($request, $order, $oldStatus, $newStatus) {
+            $order->update(['status' => $newStatus]);
+
+            // Restore stock if cancelled (and wasn't already cancelled)
+            if ($newStatus === 'cancelled' && $oldStatus !== 'cancelled') {
+                foreach ($order->orderItems as $item) {
+                    if ($item->menu) {
+                        $item->menu->increment('stock', $item->quantity);
+                    }
+                }
             }
-        }
+            
+            // If transitioning FROM cancelled TO something else (rare but possible), decrement stock
+            if ($oldStatus === 'cancelled' && $newStatus !== 'cancelled') {
+                foreach ($order->orderItems as $item) {
+                    if ($item->menu) {
+                        $item->menu->decrement('stock', $item->quantity);
+                    }
+                }
+            }
 
-        broadcast(new OrderStatusUpdated($order))->toOthers();
+            if ($order->table && in_array($newStatus, ['completed', 'cancelled'])) {
+                $order->table->update(['status' => 'available']);
+                
+                // If order is linked to a reservation, mark it as completed
+                if ($order->reservation_id) {
+                    $order->reservation->update(['status' => 'completed']);
+                }
+            }
 
-        return back()->with('success', 'Status pesanan berhasil diperbarui.');
+            broadcast(new OrderStatusUpdated($order))->toOthers();
+
+            return back()->with('success', 'Status pesanan berhasil diperbarui.');
+        });
     }
 }

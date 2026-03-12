@@ -59,7 +59,16 @@ class OrderController extends Controller
 
             $totalPrice = $order->total_price;
             foreach ($request->items as $item) {
-                $menu = Menu::findOrFail($item['id']);
+                // Use lockForUpdate to prevent race conditions on stock
+                $menu = Menu::where('id', $item['id'])->lockForUpdate()->firstOrFail();
+                
+                // Check if stock is sufficient
+                if ($menu->stock < $item['quantity']) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'items' => ["Stok untuk {$menu->name} tidak mencukupi. Sisa stok: {$menu->stock}."]
+                    ]);
+                }
+
                 $priceAtTime = $menu->price;
 
                 if (!empty($item['variant_id'])) {
@@ -78,8 +87,11 @@ class OrderController extends Controller
                     'quantity' => $item['quantity'],
                     'price_at_time' => $priceAtTime,
                     'notes' => $item['notes'] ?? null,
-                    'is_printed' => false, // New items are not printed yet
+                    'is_printed' => false,
                 ]);
+
+                // Decrement stock
+                $menu->decrement('stock', $item['quantity']);
             }
 
             $order->update(['total_price' => $totalPrice]);

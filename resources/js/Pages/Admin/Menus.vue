@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useForm, router, Head } from '@inertiajs/vue3';
 import QrcodeVue from 'qrcode.vue';
 
@@ -14,6 +14,18 @@ const activeTab = ref('menus');
 const isCategoryModalOpen = ref(false);
 const isMenuModalOpen = ref(false);
 const selectedItem = ref<any>(null);
+
+// Search & Filter State
+const searchQuery = ref('');
+const selectedCategoryId = ref<number | null>(null);
+
+const filteredMenus = computed(() => {
+    return props.menus.filter(m => {
+        const matchesCategory = !selectedCategoryId.value || m.category_id === selectedCategoryId.value;
+        const matchesSearch = !searchQuery.value || m.name.toLowerCase().includes(searchQuery.value.toLowerCase());
+        return matchesCategory && matchesSearch;
+    });
+});
 
 const categoryForm = useForm({
     name: ''
@@ -169,9 +181,40 @@ const getBaseUrl = () => window.location.origin;
                 </div>
             </div>
 
+            <!-- Search & Filter Area (Active only for Menus) -->
+            <div v-if="activeTab === 'menus'" class="flex flex-col lg:flex-row gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div class="flex-1 relative">
+                    <svg class="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <input 
+                        v-model="searchQuery"
+                        type="text" 
+                        placeholder="Cari menu berdasarkan nama..." 
+                        class="w-full bg-white border-slate-200 rounded-[28px] py-5 pl-16 pr-8 text-sm font-bold focus:border-blue-600 focus:ring-0 transition-all outline-none shadow-sm"
+                    >
+                </div>
+                <div class="flex flex-nowrap overflow-x-auto gap-2 no-scrollbar pb-2">
+                    <button 
+                        @click="selectedCategoryId = null"
+                        class="px-8 h-16 rounded-[24px] text-[10px] font-black uppercase tracking-[0.2em] border transition-all whitespace-nowrap"
+                        :class="selectedCategoryId === null ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'"
+                    >
+                        Semua Kategori
+                    </button>
+                    <button 
+                        v-for="cat in categories" 
+                        :key="cat.id"
+                        @click="selectedCategoryId = cat.id"
+                        class="px-8 h-16 rounded-[24px] text-[10px] font-black uppercase tracking-[0.2em] border transition-all whitespace-nowrap"
+                        :class="selectedCategoryId === cat.id ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'"
+                    >
+                        {{ cat.name }}
+                    </button>
+                </div>
+            </div>
+
             <!-- Menus Content -->
             <div v-if="activeTab === 'menus'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div v-for="menu in menus" :key="menu.id" class="bg-white border border-slate-200 rounded-[32px] p-6 group hover:shadow-xl hover:shadow-blue-600/5 transition-all relative overflow-hidden">
+                <div v-for="menu in filteredMenus" :key="menu.id" class="bg-white border border-slate-200 rounded-[32px] p-6 group hover:shadow-xl hover:shadow-blue-600/5 transition-all relative overflow-hidden">
                     <div class="relative mb-6 overflow-hidden rounded-2xl">
                         <img :src="menu.image" class="w-full h-44 object-cover group-hover:scale-110 transition-transform duration-700">
                         <div class="absolute top-4 left-4 bg-white/80 backdrop-blur-md border border-slate-200 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest text-blue-600">

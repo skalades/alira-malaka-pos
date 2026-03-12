@@ -200,6 +200,7 @@ watch(() => props.chartData, () => {
                         <thead>
                             <tr class="bg-slate-50 border-b border-slate-100">
                                 <th class="p-6 text-[10px] font-black uppercase text-slate-400 tracking-widest">Nama Produk</th>
+                                <th class="p-6 text-[10px] font-black uppercase text-slate-400 tracking-widest text-right">Sisa Stok</th>
                                 <th class="p-6 text-[10px] font-black uppercase text-slate-400 tracking-widest text-right">Terjual</th>
                                 <th class="p-6 text-[10px] font-black uppercase text-slate-400 tracking-widest text-right">Total (Rp)</th>
                             </tr>
@@ -207,6 +208,7 @@ watch(() => props.chartData, () => {
                         <tbody>
                             <tr v-for="item in itemizedSales" :key="item.name" class="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors">
                                 <td class="p-6 font-bold text-slate-900">{{ item.name }}</td>
+                                <td class="p-6 text-right font-black" :class="item.stock <= 5 ? 'text-red-600' : 'text-slate-400'">{{ item.stock }}</td>
                                 <td class="p-6 text-right font-black text-blue-600">{{ item.quantity }}</td>
                                 <td class="p-6 text-right font-black text-slate-900">Rp {{ item.revenue.toLocaleString('id-ID') }}</td>
                             </tr>

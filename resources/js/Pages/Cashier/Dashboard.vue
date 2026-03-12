@@ -273,6 +273,11 @@ const handleMenuClick = (menu: any) => {
     const isKumplit = menu.name.toLowerCase().includes('kumplit');
     const isPaket = menu.name.toLowerCase().includes('paket');
     
+    if (menu.stock <= 0) {
+        alert(`Maaf, stok ${menu.name} sedang habis.`);
+        return;
+    }
+
     if (isKumplit || isPaket) {
         selectedMenuForCustom.value = menu;
         selectedRice.value = '';
@@ -1444,7 +1449,11 @@ const getStatusLabel = (status: string) => {
                                     :key="menu.id"
                                     @click="handleMenuClick(menu)"
                                     class="bg-white border border-slate-100 rounded-[18px] lg:rounded-[24px] p-3 lg:p-4 flex flex-col hover:border-blue-600 hover:shadow-xl transition-all cursor-pointer group relative h-full min-h-[100px] lg:min-h-[140px]"
+                                    :class="menu.stock <= 0 ? 'opacity-60 grayscale-[0.5] cursor-not-allowed' : ''"
                                 >
+                                    <div v-if="menu.stock <= 0" class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                                        <span class="bg-red-600 text-white text-[8px] lg:text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Stok Habis</span>
+                                    </div>
                                     <div v-if="getMenuQuantity(menu.id) > 0" class="absolute -top-1 -right-1 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-[9px] font-black shadow-lg shadow-blue-600/20 border-2 border-white z-10 animate-in zoom-in duration-300">
                                         {{ getMenuQuantity(menu.id) }}
                                     </div>
@@ -1454,8 +1463,9 @@ const getStatusLabel = (status: string) => {
                                             {{ menu.description }}
                                         </p>
                                     </div>
-                                    <div class="mt-auto border-t border-slate-50 pt-2 lg:pt-3">
+                                    <div class="mt-auto border-t border-slate-50 pt-2 lg:pt-3 flex justify-between items-center">
                                         <p class="text-blue-600 font-black text-[11px] lg:text-sm">Rp {{ Number(menu.price).toLocaleString('id-ID') }}</p>
+                                        <p class="text-[8px] font-bold uppercase tracking-tighter" :class="menu.stock <= 5 ? 'text-red-500' : 'text-slate-300'">Stok: {{ menu.stock }}</p>
                                     </div>
                                 </div>
                             </div>
