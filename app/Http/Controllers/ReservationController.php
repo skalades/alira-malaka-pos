@@ -31,7 +31,7 @@ class ReservationController extends Controller
     public function updateStatus(Request $request, Reservation $reservation)
     {
         $validated = $request->validate([
-            'status' => 'required|in:pending,confirmed,checked_in,cancelled'
+            'status' => 'required|in:pending,confirmed,checked_in,cancelled,completed'
         ]);
 
         $reservation->update($validated);

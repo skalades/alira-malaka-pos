@@ -69,6 +69,11 @@ class CashierController extends Controller
 
         if ($order->table && in_array($request->status, ['completed', 'cancelled'])) {
             $order->table->update(['status' => 'available']);
+            
+            // If order is linked to a reservation, mark it as completed
+            if ($order->reservation_id) {
+                $order->reservation->update(['status' => 'completed']);
+            }
         }
 
         broadcast(new OrderStatusUpdated($order))->toOthers();
