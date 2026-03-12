@@ -33,12 +33,24 @@ class OrderStatusUpdated implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new Channel('order.' . $this->order->order_number),
+            new Channel('orders'),
         ];
     }
 
     public function broadcastAs()
     {
         return 'order.status.updated';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'order' => [
+                'id' => $this->order->id,
+                'status' => $this->order->status,
+                'table_id' => $this->order->table_id,
+                // Add enough info for the frontend to handle removal/update
+            ]
+        ];
     }
 }

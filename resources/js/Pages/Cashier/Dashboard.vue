@@ -35,10 +35,15 @@ const props = defineProps<{
 const page = usePage();
 
 const orders = ref([...props.pendingOrders]);
+const tables = ref([...props.tables]);
 
-// Sync orders when props update (Inertia refresh)
+// Sync props when Inertia refresh happens
 watch(() => props.pendingOrders, (newOrders) => {
     orders.value = [...newOrders];
+}, { deep: true });
+
+watch(() => props.tables, (newTables) => {
+    tables.value = [...newTables];
 }, { deep: true });
 const isPaymentModalOpen = ref(false);
 const isOrderModalOpen = ref(false);
@@ -492,7 +497,11 @@ const formattedClosingCash = computed({
 
 const openOrderModal = (type: 'dine_in' | 'takeaway', table: any = null) => {
     if (table && table.status === 'occupied') {
-        const activeOrder = orders.value.find(o => o.table_id === table.id && o.status !== 'completed' && o.status !== 'cancelled');
+        const activeOrder = orders.value.find(o => 
+            (o.table_id == table.id || (o.table && o.table.id == table.id)) && 
+            o.status !== 'completed' && 
+            o.status !== 'cancelled'
+        );
         if (activeOrder) {
             selectedOrderForQuickAction.value = activeOrder;
             isQuickActionModalOpen.value = true;
@@ -619,10 +628,36 @@ onMounted(() => {
         window.Echo.channel('orders')
             .listen('.order.placed', (e: any) => {
                 console.log('New Order Received:', e);
-                // Ensure we don't duplicate if already there
                 if (!orders.value.find(o => o.id === e.order.id)) {
                     orders.value.unshift(e.order);
+                    
+                    // Mark table as occupied locally
+                    if (e.order.table_id) {
+                        const table = tables.value.find(t => t.id == e.order.table_id);
+                        if (table) table.status = 'occupied';
+                    }
+                    
                     playNotificationSound();
+                }
+            })
+            .listen('.order.status.updated', (e: any) => {
+                console.log('Order Status Updated:', e);
+                const idx = orders.value.findIndex(o => o.id === e.order.id);
+                if (idx !== -1) {
+                    if (['completed', 'cancelled'].includes(e.order.status)) {
+                        // Mark table as available locally first
+                        const order = orders.value[idx];
+                        const tid = e.order.table_id || order.table_id || order.table?.id;
+                        if (tid) {
+                            const table = tables.value.find(t => t.id == tid);
+                            if (table) table.status = 'available';
+                        }
+                        // Remove from active queue
+                        orders.value.splice(idx, 1);
+                    } else {
+                        // Simply update status (e.g. to 'paid')
+                        orders.value[idx].status = e.order.status;
+                    }
                 }
             });
     }

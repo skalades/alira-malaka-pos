@@ -39,6 +39,8 @@ class OrderPlaced implements ShouldBroadcast
         return [
             'order' => [
                 'id' => $this->order->id,
+                'table_id' => $this->order->table_id,
+                'customer_id' => $this->order->customer_id,
                 'order_number' => $this->order->order_number,
                 'total_price' => (float)$this->order->total_price,
                 'status' => $this->order->status,

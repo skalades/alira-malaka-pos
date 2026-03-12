@@ -32,7 +32,7 @@ class OrderController extends Controller
             $order = null;
             if ($request->type === 'dine_in' && $request->table_id) {
                 $order = Order::where('table_id', $request->table_id)
-                    ->where('status', '!=', 'paid')
+                    ->whereNotIn('status', ['completed', 'cancelled'])
                     ->latest()
                     ->first();
             }
