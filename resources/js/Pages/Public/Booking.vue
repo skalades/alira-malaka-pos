@@ -266,7 +266,9 @@ const downloadReceipt = () => {
                         <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Pilih Meja</label>
                         <select v-model="form.table_id" required class="block w-full rounded-3xl border-slate-100 bg-slate-50/50 focus:bg-white focus:border-blue-600 focus:ring-blue-600 font-bold h-16 px-6 transition-all">
                             <option value="">Pilih Meja Favorit</option>
-                            <option v-for="t in tables" :key="t.id" :value="t.id">MEJA {{ t.table_number }}</option>
+                            <option v-for="t in tables" :key="t.id" :value="t.id" :disabled="t.is_booked">
+                                MEJA {{ t.table_number }} {{ t.is_booked ? '(Penuh/Dipesan)' : '' }}
+                            </option>
                         </select>
                     </div>
                     <div class="space-y-2">

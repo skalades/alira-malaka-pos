@@ -12,8 +12,23 @@ class BookingController extends Controller
 {
     public function index()
     {
+        $tables = Table::all()->map(function ($table) {
+            $isBooked = $table->status !== 'available' || 
+                        $table->reservations()
+                            ->whereDate('reservation_time', today())
+                            ->whereIn('status', ['confirmed', 'checked_in'])
+                            ->exists();
+            
+            return [
+                'id' => $table->id,
+                'table_number' => $table->table_number,
+                'status' => $table->status,
+                'is_booked' => $isBooked
+            ];
+        });
+
         return Inertia::render('Public/Booking', [
-            'tables' => Table::where('status', 'available')->get(),
+            'tables' => $tables,
             'categories' => \App\Models\Category::all(),
             'menus' => \App\Models\Menu::with('variants')->where('is_available', true)->get(),
             'bankSettings' => [
@@ -49,6 +64,17 @@ class BookingController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.notes' => 'nullable|string',
         ]);
+
+        $table = Table::find($validated['table_id']);
+        $isBooked = $table->status !== 'available' || 
+                    $table->reservations()
+                        ->whereDate('reservation_time', \Carbon\Carbon::parse($validated['reservation_time'])->toDateString())
+                        ->whereIn('status', ['confirmed', 'checked_in'])
+                        ->exists();
+
+        if ($isBooked) {
+            return back()->withErrors(['table_id' => 'Meja ini sudah dipesan atau tidak tersedia untuk waktu tersebut.']);
+        }
 
         $reservation = \DB::transaction(function () use ($request, $validated) {
             // Find or create customer
