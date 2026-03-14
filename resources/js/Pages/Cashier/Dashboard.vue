@@ -441,11 +441,21 @@ const getItemsByCategory = (orderItems: any[], categoryName: string) => {
 const processPayment = () => {
     if (!selectedOrder.value) return;
     const orderId = selectedOrder.value.id;
+    const finalTotal = finalTotalAfterDiscount.value;
+
+    // For non-cash payments, the amount paid is always the exact total
+    const amountPaid = paymentForm.value.method === 'cash' 
+        ? paymentForm.value.amount 
+        : finalTotal;
+
+    const changeAmount = paymentForm.value.method === 'cash'
+        ? Math.max(0, paymentForm.value.amount - finalTotal)
+        : 0;
 
     router.post(route('order.pay', orderId), {
         payment_method: paymentForm.value.method,
-        amount_paid: paymentForm.value.amount,
-        change_amount: Math.max(0, paymentForm.value.amount - finalTotalAfterDiscount.value),
+        amount_paid: amountPaid,
+        change_amount: changeAmount,
         customer_id: paymentForm.value.customer_id,
         points_redeemed: paymentForm.value.points_redeemed,
         points_earned: pointsToEarn.value,
@@ -793,6 +803,7 @@ const getStatusLabel = (status: string) => {
                             <p>Pesanan: #{{ selectedOrder.order_number }}</p>
                             <p class="text-3xl font-black border-2 border-black inline-block px-4 py-2 mt-2">{{ selectedOrder.table ? 'MEJA ' + selectedOrder.table.table_number : 'BUNGKUS ' }}</p>
                             <p v-if="selectedOrder.customer" class="font-bold">Pelanggan: {{ selectedOrder.customer.name }}</p>
+                            <p v-if="selectedOrder.transaction" class="font-bold uppercase mt-1">Metode: {{ selectedOrder.transaction.payment_method }}</p>
                         </div>
                         <div class="border-t border-b border-black py-2 mb-2">
                             <div v-for="item in selectedOrder.order_items" :key="item.id" class="mb-1">
