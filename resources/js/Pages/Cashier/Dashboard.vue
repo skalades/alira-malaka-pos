@@ -1003,7 +1003,7 @@ const getStatusLabel = (status: string) => {
                                 <span>Potongan Tunai</span>
                                 <span>- {{ Number(printTotals.manualDiscount).toLocaleString('id-ID') }}</span>
                             </div>
-                            <div v-if="printTotals.percentageDiscountAmount > 0" class="flex justify-between text-[10px] text-red-600">
+                            <div v-if="(printTotals.percentageDiscountAmount ?? 0) > 0" class="flex justify-between text-[10px] text-red-600">
                                 <span>Diskon Persen ({{ printTotals.percentageDiscount }}%)</span>
                                 <span>- {{ Number(printTotals.percentageDiscountAmount || 0).toLocaleString('id-ID') }}</span>
                             </div>
@@ -2218,8 +2218,8 @@ const getStatusLabel = (status: string) => {
                                     class="h-14 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-[8px] uppercase tracking-widest transition-all hover:bg-slate-100 flex flex-col items-center justify-center gap-1"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11l-8 8-4-4m0-8l8 8 4-4"></path></svg>
-                                    <span v-if="selectedOrderForQuickAction?.order_items?.some(i => !i.is_printed)">
-                                        CETAK ITEM BARU ({{ selectedOrderForQuickAction.order_items.filter(i => !i.is_printed).length }})
+                                    <span v-if="selectedOrderForQuickAction?.order_items?.some((i: any) => !i.is_printed)">
+                                        CETAK ITEM BARU ({{ selectedOrderForQuickAction.order_items.filter((i: any) => !i.is_printed).length }})
                                     </span>
                                     <span v-else>CETAK DAPUR</span>
                                 </button>
@@ -2238,7 +2238,7 @@ const getStatusLabel = (status: string) => {
                                 <button 
                                     @click="() => {
                                         if (selectedOrderForQuickAction?.status !== 'paid') {
-                                            if (confirm('Pesanan ini belum dibayar. Apakah Anda yakin ingin mengosongkan meja secara paksa?')) {
+                                            if (window.confirm('Pesanan ini belum dibayar. Apakah Anda yakin ingin mengosongkan meja secara paksa?')) {
                                                 updateOrderStatus(selectedOrderForQuickAction.id, 'completed');
                                                 isQuickActionModalOpen = false;
                                             }
