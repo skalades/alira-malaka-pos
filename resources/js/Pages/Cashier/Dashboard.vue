@@ -864,6 +864,18 @@ const getStatusLabel = (status: string) => {
         default: return status;
     }
 };
+
+const handleClearTable = () => {
+    if (selectedOrderForQuickAction.value?.status !== 'paid') {
+        if (window.confirm('Pesanan ini belum dibayar. Apakah Anda yakin ingin mengosongkan meja secara paksa?')) {
+            updateOrderStatus(selectedOrderForQuickAction.value.id, 'completed');
+            isQuickActionModalOpen.value = false;
+        }
+    } else {
+        updateOrderStatus(selectedOrderForQuickAction.value.id, 'completed');
+        isQuickActionModalOpen.value = false;
+    }
+};
 </script>
 
 <style>
@@ -2236,17 +2248,7 @@ const getStatusLabel = (status: string) => {
                                     <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest mt-1">SIAP</span>
                                 </div>
                                 <button 
-                                    @click="() => {
-                                        if (selectedOrderForQuickAction?.status !== 'paid') {
-                                            if (window.confirm('Pesanan ini belum dibayar. Apakah Anda yakin ingin mengosongkan meja secara paksa?')) {
-                                                updateOrderStatus(selectedOrderForQuickAction.id, 'completed');
-                                                isQuickActionModalOpen = false;
-                                            }
-                                        } else {
-                                            updateOrderStatus(selectedOrderForQuickAction.id, 'completed');
-                                            isQuickActionModalOpen = false;
-                                        }
-                                    }"
+                                    @click="handleClearTable"
                                     class="h-14 bg-red-50 text-red-500 border border-red-200 rounded-2xl font-black text-[8px] uppercase tracking-widest transition-all hover:bg-red-100 flex flex-col items-center justify-center gap-1"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
