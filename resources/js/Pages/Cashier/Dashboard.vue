@@ -279,7 +279,7 @@ const filteredPrintItems = computed(() => {
 const printTotals = computed(() => {
     const items = filteredPrintItems.value;
     if (!items || items.length === 0) {
-        return { subtotal: 0, serviceCharge: 0, tax: 0, discount: 0, manualDiscount: 0, grandTotal: 0, transaction: null };
+        return { subtotal: 0, serviceCharge: 0, tax: 0, discount: 0, manualDiscount: 0, percentageDiscount: 0, percentageDiscountAmount: 0, previousPaymentsAndDp: 0, grandTotal: 0, transaction: null };
     }
     const subtotal = items.reduce((acc: number, item: any) => acc + (item.price_at_time * item.quantity), 0);
     const serviceCharge = props.serviceChargeSettings.enabled ? (subtotal * props.serviceChargeSettings.percentage / 100) : 0;
@@ -364,7 +364,7 @@ const printTotals = computed(() => {
             discount,
             manualDiscount,
             percentageDiscount,
-            percentageDiscountAmount,
+            percentageDiscountAmount: percentageDiscountAmount.value,
             previousPaymentsAndDp,
             grandTotal,
             transaction
