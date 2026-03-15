@@ -7,6 +7,10 @@ import Chart from 'chart.js/auto';
 const props = defineProps<{
     itemizedSales: any[];
     totalRevenue: number;
+    totalSubtotal: number;
+    totalTax: number;
+    totalService: number;
+    totalDiscount: number;
     orderCount: number;
     chartData: any[];
     shiftStats: {
@@ -131,12 +135,32 @@ watch(() => props.chartData, () => {
                 </button>
             </div>
 
-            <!-- Stats -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
-                <div class="bg-blue-600 p-8 rounded-[40px] text-white shadow-xl shadow-blue-600/20">
-                    <p class="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 mb-2">Total Pendapatan</p>
-                    <h3 class="text-2xl font-black tracking-tighter">Rp {{ totalRevenue.toLocaleString('id-ID') }}</h3>
+            <!-- Detailed Stats Breakdown -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                <div class="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Subtotal Produk</p>
+                    <h3 class="text-xl font-black text-slate-900 tracking-tighter">Rp {{ totalSubtotal.toLocaleString('id-ID') }}</h3>
                 </div>
+                <div class="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Total Pajak</p>
+                    <h3 class="text-xl font-black text-slate-900 tracking-tighter">Rp {{ totalTax.toLocaleString('id-ID') }}</h3>
+                </div>
+                <div class="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Service Charge</p>
+                    <h3 class="text-xl font-black text-slate-900 tracking-tighter">Rp {{ totalService.toLocaleString('id-ID') }}</h3>
+                </div>
+                <div class="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 mb-2">Total Diskon</p>
+                    <h3 class="text-xl font-black text-red-600 tracking-tighter">- Rp {{ totalDiscount.toLocaleString('id-ID') }}</h3>
+                </div>
+                <div class="bg-blue-600 p-6 rounded-[32px] text-white shadow-lg shadow-blue-600/20">
+                    <p class="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 mb-2">Net Collection</p>
+                    <h3 class="text-xl font-black tracking-tighter">Rp {{ totalRevenue.toLocaleString('id-ID') }}</h3>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div class="bg-slate-900 p-8 rounded-[40px] text-white shadow-xl shadow-slate-900/20">
                     <p class="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 mb-2">Total Transaksi</p>
                     <h3 class="text-2xl font-black tracking-tighter">{{ orderCount }} Pesanan</h3>

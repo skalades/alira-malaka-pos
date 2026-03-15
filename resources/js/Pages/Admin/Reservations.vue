@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import dayjs from 'dayjs';
 
@@ -14,7 +14,30 @@ const props = defineProps<{
         status: string;
     };
     tables: any[];
+    settings: {
+        min_dp: number;
+    };
 }>();
+
+const showCreateModal = ref(false);
+const form = useForm({
+    name: '',
+    phone: '',
+    table_id: '',
+    reservation_time: '',
+    num_people: 1,
+    dp_amount: props.settings.min_dp || 0,
+    notes: ''
+});
+
+const submitBooking = () => {
+    form.post(route('admin.reservations.store'), {
+        onSuccess: () => {
+            showCreateModal.value = false;
+            form.reset();
+        }
+    });
+};
 
 const filterDate = ref(props.filters.date || '');
 const filterStatus = ref(props.filters.status || '');
@@ -69,7 +92,13 @@ const translateStatus = (status: string) => {
 
     <AuthenticatedLayout>
         <template #header>
-            Daftar Reservasi Meja
+            <div class="flex justify-between items-center w-full">
+                <span>Daftar Reservasi Meja</span>
+                <button @click="showCreateModal = true" class="px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"></path></svg>
+                    Tambah Reservasi
+                </button>
+            </div>
         </template>
 
         <div class="space-y-8">
@@ -162,6 +191,76 @@ const translateStatus = (status: string) => {
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <!-- Create Reservation Modal -->
+        <div v-if="showCreateModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-200">
+            <div class="relative max-w-2xl w-full bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                <div class="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div>
+                        <h3 class="font-black text-slate-900 uppercase text-xs tracking-widest">Tambah Reservasi Manual</h3>
+                        <p class="text-[10px] text-slate-400 font-bold mt-1">Gunakan untuk input pesanan via WhatsApp/Telepon</p>
+                    </div>
+                    <button @click="showCreateModal = false" class="p-3 hover:bg-white hover:shadow-sm rounded-2xl transition-all group">
+                        <svg class="w-5 h-5 text-slate-400 group-hover:text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                
+                <form @submit.prevent="submitBooking" class="p-8 space-y-6">
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nama Pelanggan</label>
+                            <input v-model="form.name" type="text" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12" placeholder="Contoh: Budi Santoso">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nomor WhatsApp</label>
+                            <input v-model="form.phone" type="text" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12" placeholder="08xxxxxxxxxx">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Pilih Meja</label>
+                            <select v-model="form.table_id" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12">
+                                <option value="" disabled>Pilih Meja...</option>
+                                <option v-for="table in tables" :key="table.id" :value="table.id">Meja {{ table.table_number }} ({{ table.status }})</option>
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Jumlah Orang (Pax)</label>
+                            <input v-model="form.num_people" type="number" min="1" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Waktu Reservasi</label>
+                            <input v-model="form.reservation_time" type="datetime-local" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nominal DP (Bisa Diedit)</label>
+                            <div class="relative">
+                                <span class="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400 text-xs">Rp</span>
+                                <input v-model="form.dp_amount" type="number" min="0" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold pl-12 pr-4 h-12 bg-blue-50/30">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Catatan Tambahan</label>
+                        <textarea v-model="form.notes" class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 py-3" rows="2" placeholder="Sebutkan jika ada permintaan khusus..."></textarea>
+                    </div>
+
+                    <div class="pt-4 flex gap-4">
+                        <button type="button" @click="showCreateModal = false" class="flex-1 h-14 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">
+                            Batal
+                        </button>
+                        <button type="submit" :disabled="form.processing" class="flex-[2] h-14 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50">
+                            {{ form.processing ? 'Menyimpan...' : 'Simpan Reservasi' }}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
 

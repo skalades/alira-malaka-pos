@@ -106,7 +106,8 @@ const buildReceipt = (
     serviceChargeSettings: any, 
     mode: 'customer' | 'kitchen' | 'qc' = 'customer', 
     category?: string,
-    onlyUnprinted: boolean = false
+    onlyUnprinted: boolean = false,
+    transactionId?: number | null
 ) => {
     const pageWidth = 32;
 
@@ -115,14 +116,20 @@ const buildReceipt = (
             .bold().fontSize(2, 2).line(shopSettings.name).fontSize(1, 1).bold(false)
             .line(shopSettings.address || '')
             .feed(1)
-            .line('STRUK PELANGGAN')
+            .line(transactionId ? 'STRUK PEMBAYARAN' : 'STRUK PELANGGAN')
             .line(new Date().toLocaleDateString('id-ID') + ' ' + new Date().toLocaleTimeString('id-ID'))
             .line(`Pesanan: #${order.order_number}`)
             .line(order.table ? `MEJA ${order.table.table_number}` : 'BUNGKUS')
             .dashLine()
             .alignLeft();
 
-        order.order_items.forEach((item: any) => {
+        const itemsToPrint = transactionId 
+            ? (order.order_items || []).filter((item: any) => item.transaction_id === transactionId)
+            : (order.order_items || []);
+
+        if (itemsToPrint.length === 0) return false;
+
+        itemsToPrint.forEach((item: any) => {
             let name = item.menu.name;
             if (item.variant) {
                 name += ` (${item.variant.name})`;
@@ -143,7 +150,7 @@ const buildReceipt = (
 
         builder.dashLine();
 
-        const subtotal = Number(order.total_price);
+        const subtotal = itemsToPrint.reduce((acc: number, item: any) => acc + (item.price_at_time * item.quantity), 0);
         let total = subtotal;
 
         if (serviceChargeSettings.enabled || taxSettings.enabled) {
@@ -166,14 +173,70 @@ const buildReceipt = (
             builder.dashLine();
         }
 
-        total -= Number(order.loyalty_discount || 0);
+        // Handle discounts for specific transactions
+        let transaction: any = null;
+        if (transactionId) {
+            transaction = order.transactions.find((t: any) => t.id === transactionId);
+            if (transaction) {
+                const loyaltyDiscount = Number(transaction.loyalty_discount || 0);
+                const manualDiscount = Number(transaction.discount_amount || 0);
+                const discountPercentage = Number(transaction.discount_percentage || 0);
+                
+                if (loyaltyDiscount > 0) {
+                    builder.line(justify('DISKON POIN', `-${loyaltyDiscount.toLocaleString()}`, pageWidth));
+                    total -= loyaltyDiscount;
+                }
+                
+                if (manualDiscount > 0) {
+                    builder.line(justify('POTONGAN TUNAI', `-${manualDiscount.toLocaleString()}`, pageWidth));
+                    total -= manualDiscount;
+                }
+
+                if (discountPercentage > 0) {
+                    const percentageAmount = (subtotal * discountPercentage) / 100;
+                    builder.line(justify(`DISKON PERSEN (${discountPercentage}%)`, `-${percentageAmount.toLocaleString()}`, pageWidth));
+                    total -= percentageAmount;
+                }
+            }
+        } else {
+            const totalLoyalty = Number(order.loyalty_discount || 0);
+            const totalManual = Number(order.discount_amount || 0);
+            const totalPercentage = Number(order.discount_percentage || 0);
+
+            if (totalLoyalty > 0) {
+                builder.line(justify('DISKON POIN', `-${totalLoyalty.toLocaleString()}`, pageWidth));
+                total -= totalLoyalty;
+            }
+
+            if (totalManual > 0) {
+                builder.line(justify('POTONGAN TUNAI', `-${totalManual.toLocaleString()}`, pageWidth));
+                total -= totalManual;
+            }
+
+            if (totalPercentage > 0) {
+                const percentageAmount = (subtotal * totalPercentage) / 100;
+                builder.line(justify(`DISKON PERSEN (${totalPercentage}%)`, `-${percentageAmount.toLocaleString()}`, pageWidth));
+                total -= totalPercentage;
+            }
+        }
 
         builder.bold().line(justify('TOTAL TERTAGIH', `Rp ${total.toLocaleString()}`, pageWidth)).bold(false);
 
-        if (order.transaction) {
+        if (transaction) {
             builder.feed(1)
-                .line(justify(`BAYAR (${order.transaction.payment_method.toUpperCase()})`, Number(order.transaction.amount_paid).toLocaleString(), pageWidth))
-                .bold().line(justify('KEMBALIAN', Number(order.transaction.change_amount).toLocaleString(), pageWidth)).bold(false);
+                .line(justify(`BAYAR (${transaction.payment_method.toUpperCase()})`, Number(transaction.amount_paid).toLocaleString(), pageWidth))
+                .bold().line(justify('KEMBALIAN', Number(transaction.change_amount).toLocaleString(), pageWidth)).bold(false);
+        } else if (Number(order.total_paid) > 0) {
+            builder.feed(1);
+            if (order.transactions && order.transactions.length > 0) {
+                order.transactions.forEach((t: any) => {
+                    builder.line(justify(`BAYAR (${t.payment_method.toUpperCase()})`, Number(t.amount_paid).toLocaleString(), pageWidth));
+                    if (Number(t.change_amount) > 0) {
+                        builder.line(justify('KEMBALIAN', Number(t.change_amount).toLocaleString(), pageWidth));
+                    }
+                });
+            }
+            builder.bold().line(justify('TOTAL DIBAYAR', Number(order.total_paid).toLocaleString(), pageWidth)).bold(false);
         }
 
         builder.feed(2).alignCenter()
@@ -242,19 +305,19 @@ const buildReceipt = (
 /**
  * Legacy single print function. Now uses the batch logic.
  */
-export const printOrderRawBT = (order: any, shopSettings: any, taxSettings: any, serviceChargeSettings: any, mode: 'customer' | 'kitchen' | 'qc' = 'customer', category?: string, onlyUnprinted: boolean = false) => {
-    return printOrderBatchRawBT(order, shopSettings, taxSettings, serviceChargeSettings, [{ mode, category }], onlyUnprinted);
+export const printOrderRawBT = (order: any, shopSettings: any, taxSettings: any, serviceChargeSettings: any, mode: 'customer' | 'kitchen' | 'qc' = 'customer', category?: string, onlyUnprinted: boolean = false, transactionId?: number | null) => {
+    return printOrderBatchRawBT(order, shopSettings, taxSettings, serviceChargeSettings, [{ mode, category }], onlyUnprinted, transactionId);
 };
 
 /**
  * Prints multiple receipts in a single batch call to RawBT.
  */
-export const printOrderBatchRawBT = (order: any, shopSettings: any, taxSettings: any, serviceChargeSettings: any, prints: { mode: 'customer' | 'kitchen' | 'qc', category?: string }[], onlyUnprinted: boolean = false) => {
+export const printOrderBatchRawBT = (order: any, shopSettings: any, taxSettings: any, serviceChargeSettings: any, prints: { mode: 'customer' | 'kitchen' | 'qc', category?: string }[], onlyUnprinted: boolean = false, transactionId?: number | null) => {
     const builder = new EscPosBuilder().init();
     
     let hasContent = false;
     prints.forEach(p => {
-        const result = buildReceipt(builder, order, shopSettings, taxSettings, serviceChargeSettings, p.mode, p.category, onlyUnprinted);
+        const result = buildReceipt(builder, order, shopSettings, taxSettings, serviceChargeSettings, p.mode, p.category, onlyUnprinted, transactionId);
         if (result) {
             builder.feed(5); // Add space for manual tear if auto-cut is not supported
             builder.cut();

@@ -16,7 +16,7 @@ class CashierController extends Controller
     {
         $tables = Table::all();
         $menus = Menu::with(['category', 'variants'])->where('is_available', true)->get();
-        $pendingOrders = Order::with(['table', 'orderItems.menu.category', 'orderItems.variant', 'transaction', 'customer', 'user'])
+        $pendingOrders = Order::with(['table', 'orderItems.menu.category', 'orderItems.variant', 'transactions', 'customer', 'user'])
             ->whereIn('status', ['pending', 'processing', 'ready', 'paid'])
             ->latest()
             ->get();
@@ -56,6 +56,9 @@ class CashierController extends Controller
                 'name' => \App\Models\Setting::get('shop_name', 'ALIRA MALAKA'),
                 'address' => \App\Models\Setting::get('shop_address', ''),
                 'footer' => \App\Models\Setting::get('shop_footer', 'Terima Kasih!'),
+            ],
+            'reservationSettings' => [
+                'min_dp' => \App\Models\Setting::get('reservation_min_dp', '0'),
             ]
         ]);
     }

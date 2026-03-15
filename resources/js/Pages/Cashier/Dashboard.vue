@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { router, Head, usePage } from '@inertiajs/vue3';
+import { router, Head, usePage, useForm } from '@inertiajs/vue3';
 import { ref, computed, onMounted, watch } from 'vue';
 import { printOrderRawBT, printOrderBatchRawBT } from '@/Utils/RawBT';
 
@@ -30,12 +30,79 @@ const props = defineProps<{
         enabled: boolean;
         percentage: number;
     };
+    reservationSettings: {
+        min_dp: number;
+    };
 }>();
 
 const page = usePage();
-
 const orders = ref([...props.pendingOrders]);
 const tables = ref([...props.tables]);
+
+// Reservation Creation Form
+const showCreateReservationModal = ref(false);
+const reservationForm = useForm({
+    name: '',
+    phone: '',
+    table_id: '',
+    reservation_time: '',
+    num_people: 1,
+    dp_amount: props.reservationSettings?.min_dp || 0,
+    notes: '',
+    items: [] as any[] // Pre-order items
+});
+
+const preOrderSearch = ref('');
+const preOrderResults = computed(() => {
+    if (!preOrderSearch.value) return [];
+    const search = preOrderSearch.value.toLowerCase();
+    return props.menus.filter(m => 
+        m.name.toLowerCase().includes(search) || 
+        m.category.name.toLowerCase().includes(search)
+    ).slice(0, 5); // Limit to top 5 results
+});
+
+const addPreOrderMenu = (menu: any, variant: any = null, notes: string = '') => {
+    // Unique key: menu ID + variant ID + notes
+    const variantId = variant?.id || null;
+    const existing = reservationForm.items.find(i => 
+        i.menu_id === menu.id && i.variant_id === variantId && i.notes === notes
+    );
+
+    if (existing) {
+        existing.quantity++;
+    } else {
+        reservationForm.items.push({
+            menu_id: menu.id,
+            menu: menu, // Keep ref for UI
+            variant_id: variantId,
+            variant: variant, // Keep ref for UI
+            quantity: 1,
+            notes: notes
+        });
+    }
+    preOrderSearch.value = '';
+};
+
+const removePreOrderMenu = (index: number) => {
+    reservationForm.items.splice(index, 1);
+};
+
+const preOrderTotal = computed(() => {
+    return reservationForm.items.reduce((sum, item) => {
+        const price = item.variant ? item.variant.price : item.menu.price;
+        return sum + (price * item.quantity);
+    }, 0);
+});
+
+const submitReservation = () => {
+    reservationForm.post(route('admin.reservations.store'), {
+        onSuccess: () => {
+            showCreateReservationModal.value = false;
+            reservationForm.reset();
+        }
+    });
+};
 
 // Sync props when Inertia refresh happens
 watch(() => props.pendingOrders, (newOrders) => {
@@ -51,6 +118,8 @@ const orderType = ref<'dine_in' | 'takeaway'>('takeaway');
 const selectedTableForOrder = ref<any>(null);
 const audioEnabled = ref(true);
 const selectedOrder = ref<any>(null);
+const selectedTransactionId = ref<number | null>(null);
+const showTransactionHistory = ref(false);
 const paymentForm = ref({
     method: 'cash',
     amount: 0,
@@ -58,6 +127,7 @@ const paymentForm = ref({
     points_redeemed: 0,
     points_earned: 0,
     discount_amount: 0,
+    discount_percentage: 0,
     discount_notes: '',
 });
 
@@ -136,15 +206,71 @@ const discountFromPoints = computed(() => {
     return paymentForm.value.points_redeemed * props.loyaltySettings.point_value;
 });
 
+const percentageDiscountAmount = computed(() => {
+    if (!selectedOrder.value) return 0;
+    const subtotal = Number(selectedOrder.value.total_price);
+    return (subtotal * (paymentForm.value.discount_percentage || 0)) / 100;
+});
+
 const finalTotalAfterDiscount = computed(() => {
     const dp = Number(selectedOrder.value?.dp_amount || 0);
     const manualDiscount = Number(paymentForm.value.discount_amount || 0);
-    return Math.max(0, selectedOrderGrandTotal.value - discountFromPoints.value - dp - manualDiscount);
+    const alreadyPaid = Number(selectedOrder.value?.total_paid || 0);
+    return Math.max(0, selectedOrderGrandTotal.value - discountFromPoints.value - dp - manualDiscount - percentageDiscountAmount.value - alreadyPaid);
 });
 
 const pointsToEarn = computed(() => {
     const total = finalTotalAfterDiscount.value;
     return Math.floor(total / 10000) * props.loyaltySettings.points_per_10k;
+});
+
+const filteredPrintItems = computed(() => {
+    if (!selectedOrder.value) return [];
+    if (!selectedTransactionId.value) return selectedOrder.value.order_items || [];
+    return (selectedOrder.value.order_items || []).filter((item: any) => item.transaction_id === selectedTransactionId.value);
+});
+
+const printTotals = computed(() => {
+    const items = filteredPrintItems.value;
+    if (!items || items.length === 0) {
+        return { subtotal: 0, serviceCharge: 0, tax: 0, discount: 0, manualDiscount: 0, grandTotal: 0, transaction: null };
+    }
+    const subtotal = items.reduce((acc: number, item: any) => acc + (item.price_at_time * item.quantity), 0);
+    const serviceCharge = props.serviceChargeSettings.enabled ? (subtotal * props.serviceChargeSettings.percentage / 100) : 0;
+    const tax = props.taxSettings.enabled ? (subtotal * props.taxSettings.percentage / 100) : 0;
+    
+    let discount = 0;
+    let manualDiscount = 0;
+    let percentageDiscount = 0;
+    let transaction = null;
+
+    if (selectedTransactionId.value && selectedOrder.value) {
+        transaction = selectedOrder.value.transactions.find((t: any) => t.id === selectedTransactionId.value);
+        if (transaction) {
+            discount = Number(transaction.loyalty_discount || 0);
+            manualDiscount = Number(transaction.discount_amount || 0);
+            percentageDiscount = Number(transaction.discount_percentage || 0);
+        }
+    } else if (selectedOrder.value) {
+        discount = Number(selectedOrder.value.loyalty_discount || 0);
+        manualDiscount = Number(selectedOrder.value.discount_amount || 0);
+        percentageDiscount = Number(selectedOrder.value.discount_percentage || 0);
+    }
+
+    const percentageDiscountAmount = (subtotal * percentageDiscount) / 100;
+    const grandTotal = subtotal + serviceCharge + tax - discount - manualDiscount - percentageDiscountAmount;
+
+    return {
+        subtotal,
+        serviceCharge,
+        tax,
+        discount,
+        manualDiscount,
+        percentageDiscount,
+        percentageDiscountAmount,
+        grandTotal,
+        transaction
+    };
 });
 
 // Reservation State
@@ -184,7 +310,16 @@ const handleCheckIn = () => {
             activeReservationId.value = activeReservation.value.id;
             activeDP.value = Number(activeReservation.value.dp_amount || 0);
             isReservationModalOpen.value = false;
-            openOrderModal('dine_in', selectedTableForOrder.value);
+
+            // Only open order modal if there's no pre-order
+            const hasPreOrder = activeReservation.value.orders && activeReservation.value.orders.length > 0;
+            if (!hasPreOrder) {
+                openOrderModal('dine_in', selectedTableForOrder.value);
+            } else {
+                // If there's a pre-order, the order is already broadcasted to the tray/sidebar
+                // We just need to close the reservation modal.
+                console.log('Pre-order detected, skipping blank order modal.');
+            }
         }
     });
 };
@@ -259,11 +394,14 @@ const selectedMenuForVariant = ref<any>(null);
 const selectedMenuForCustom = ref<any>(null);
 const selectedRice = ref('');
 const selectedSambal = ref('');
+const customizationMode = ref<'regular' | 'preorder'>('regular'); // New mode tracker
 
 const riceOptions = ['Nasi Merah', 'Nasi Timbel', 'Nasi Cikur'];
 const sambalOptions = ['Sambel Goang', 'Sambel Dadak'];
 
-const handleMenuClick = (menu: any) => {
+const handleMenuClick = (menu: any, mode: 'regular' | 'preorder' = 'regular') => {
+    customizationMode.value = mode;
+
     if (menu.variants && menu.variants.length > 0) {
         selectedMenuForVariant.value = menu;
         isVariantModalOpen.value = true;
@@ -284,7 +422,11 @@ const handleMenuClick = (menu: any) => {
         selectedSambal.value = '';
         showCustomModal.value = true;
     } else {
-        addToOrderCart(menu);
+        if (mode === 'preorder') {
+            addPreOrderMenu(menu);
+        } else {
+            addToOrderCart(menu);
+        }
     }
 };
 
@@ -302,7 +444,11 @@ const selectVariant = (variant: any) => {
         isVariantModalOpen.value = false;
         showCustomModal.value = true;
     } else {
-        addToOrderCart(menu, '', variant);
+        if (customizationMode.value === 'preorder') {
+            addPreOrderMenu(menu, variant);
+        } else {
+            addToOrderCart(menu, '', variant);
+        }
         isVariantModalOpen.value = false;
         selectedMenuForVariant.value = null;
     }
@@ -316,7 +462,13 @@ const confirmCustomization = () => {
     if (selectedSambal.value) parts.push(selectedSambal.value);
     
     const variant = (selectedMenuForCustom.value as any).selected_variant || null;
-    addToOrderCart(selectedMenuForCustom.value, parts.join(', '), variant);
+    const notes = parts.join(', ');
+
+    if (customizationMode.value === 'preorder') {
+        addPreOrderMenu(selectedMenuForCustom.value, variant, notes);
+    } else {
+        addToOrderCart(selectedMenuForCustom.value, notes, variant);
+    }
     
     showCustomModal.value = false;
     selectedMenuForCustom.value = null;
@@ -345,9 +497,14 @@ const selectedOrderGrandTotal = computed(() => {
     return total;
 });
 
-const triggerPrint = (order: any, mode: 'full' | 'kitchen' | 'customer' | 'kitchen_qc' = 'full') => {
+const triggerPrint = (order: any, mode: 'full' | 'kitchen' | 'customer' | 'kitchen_qc' = 'full', transactionId?: number | null) => {
+    selectedTransactionId.value = transactionId || null;
     // Extract unique categories from order items, default to 'DAPUR' if no category
-    const categoriesInOrder = [...new Set((order.order_items || []).map((i: any) => i.menu?.category?.name || 'DAPUR'))];
+    const itemsToProcess = transactionId 
+        ? (order.order_items || []).filter((i: any) => i.transaction_id === transactionId)
+        : (order.order_items || []);
+    
+    const categoriesInOrder = [...new Set(itemsToProcess.map((i: any) => i.menu?.category?.name || 'DAPUR'))];
 
     if (useRawBT.value) {
         const prints: { mode: 'customer' | 'kitchen' | 'qc', category?: string }[] = [];
@@ -373,7 +530,7 @@ const triggerPrint = (order: any, mode: 'full' | 'kitchen' | 'customer' | 'kitch
         }
 
         if (prints.length > 0) {
-            printOrderBatchRawBT(order, props.shopSettings, props.taxSettings, props.serviceChargeSettings, prints);
+            printOrderBatchRawBT(order, props.shopSettings, props.taxSettings, props.serviceChargeSettings, prints, false, transactionId);
         }
         return;
     }
@@ -460,6 +617,7 @@ const processPayment = () => {
         points_redeemed: paymentForm.value.points_redeemed,
         points_earned: pointsToEarn.value,
         discount_amount: paymentForm.value.discount_amount,
+        discount_percentage: paymentForm.value.discount_percentage,
         discount_notes: paymentForm.value.discount_notes
     }, {
         onSuccess: (page) => {
@@ -467,7 +625,12 @@ const processPayment = () => {
             isPaymentModalOpen.value = false;
             deselectCustomer(); // Reset loyalty state
             if (updatedOrder) {
-                triggerPrint(updatedOrder, 'customer');
+                // Get the latest transaction ID
+                const latestTransaction = updatedOrder.transactions && updatedOrder.transactions.length > 0
+                    ? updatedOrder.transactions[updatedOrder.transactions.length - 1]
+                    : null;
+                
+                triggerPrint(updatedOrder, 'customer', latestTransaction?.id);
             }
         }
     });
@@ -798,15 +961,16 @@ const getStatusLabel = (status: string) => {
                         <div class="text-center mb-6">
                             <h2 class="text-xl font-bold uppercase">{{ props.shopSettings.name }}</h2>
                             <p v-if="props.shopSettings.address" class="text-[10px]">{{ props.shopSettings.address }}</p>
-                            <p class="mt-2">STRUK PELANGGAN</p>
+                            <div class="text-center font-bold mt-2">
+                                {{ selectedTransactionId ? 'STRUK PEMBAYARAN' : 'STRUK PELANGGAN' }}
+                            </div>
                             <p>{{ new Date().toLocaleDateString('id-ID') }} {{ new Date().toLocaleTimeString('id-ID') }}</p>
                             <p>Pesanan: #{{ selectedOrder.order_number }}</p>
                             <p class="text-3xl font-black border-2 border-black inline-block px-4 py-2 mt-2">{{ selectedOrder.table ? 'MEJA ' + selectedOrder.table.table_number : 'BUNGKUS ' }}</p>
                             <p v-if="selectedOrder.customer" class="font-bold">Pelanggan: {{ selectedOrder.customer.name }}</p>
-                            <p v-if="selectedOrder.transaction" class="font-bold uppercase mt-1">Metode: {{ selectedOrder.transaction.payment_method }}</p>
                         </div>
                         <div class="border-t border-b border-black py-2 mb-2">
-                            <div v-for="item in selectedOrder.order_items" :key="item.id" class="mb-1">
+                            <div v-for="item in filteredPrintItems" :key="item.id" class="mb-1">
                                 <div class="flex justify-between">
                                     <span>
                                         {{ item.quantity }}x {{ item.menu.name }}
@@ -821,45 +985,63 @@ const getStatusLabel = (status: string) => {
                         <div class="border-t border-black pt-2 space-y-1 mb-2">
                             <div v-if="props.taxSettings.enabled || props.serviceChargeSettings.enabled" class="flex justify-between text-[10px]">
                                 <span>Subtotal</span>
-                                <span>{{ Number(selectedOrder.total_price).toLocaleString('id-ID') }}</span>
+                                <span>{{ printTotals.subtotal.toLocaleString('id-ID') }}</span>
                             </div>
                             <div v-if="props.serviceChargeSettings.enabled" class="flex justify-between text-[10px]">
                                 <span>Service Chg ({{ props.serviceChargeSettings.percentage }}%)</span>
-                                <span>{{ (selectedOrder.total_price * props.serviceChargeSettings.percentage / 100).toLocaleString('id-ID') }}</span>
+                                <span>{{ printTotals.serviceCharge.toLocaleString('id-ID') }}</span>
                             </div>
                             <div v-if="props.taxSettings.enabled" class="flex justify-between text-[10px]">
                                 <span>Pajak ({{ props.taxSettings.percentage }}%)</span>
-                                <span>{{ (selectedOrder.total_price * props.taxSettings.percentage / 100).toLocaleString('id-ID') }}</span>
+                                <span>{{ printTotals.tax.toLocaleString('id-ID') }}</span>
                             </div>
-                            <div v-if="selectedOrder.loyalty_discount > 0" class="flex justify-between text-[10px] text-red-600">
-                                <span>Diskon Poin ({{ selectedOrder.points_redeemed }} pts)</span>
-                                <span>- {{ Number(selectedOrder.loyalty_discount).toLocaleString('id-ID') }}</span>
+                            <div v-if="printTotals.discount > 0" class="flex justify-between text-[10px] text-red-600">
+                                <span>Diskon Poin</span>
+                                <span>- {{ Number(printTotals.discount).toLocaleString('id-ID') }}</span>
+                            </div>
+                            <div v-if="printTotals.manualDiscount > 0" class="flex justify-between text-[10px] text-red-600">
+                                <span>Potongan Tunai</span>
+                                <span>- {{ Number(printTotals.manualDiscount).toLocaleString('id-ID') }}</span>
+                            </div>
+                            <div v-if="printTotals.percentageDiscountAmount > 0" class="flex justify-between text-[10px] text-red-600">
+                                <span>Diskon Persen ({{ printTotals.percentageDiscount }}%)</span>
+                                <span>- {{ Number(printTotals.percentageDiscountAmount || 0).toLocaleString('id-ID') }}</span>
                             </div>
                         </div>
 
                         <div class="flex justify-between font-bold border-b border-black pb-1 mb-1">
-                            <span>TOTAL TERTAGIH</span>
-                            <span>Rp {{ 
-                                (
-                                    Number(selectedOrder.total_price) + 
-                                    (props.serviceChargeSettings.enabled ? (selectedOrder.total_price * props.serviceChargeSettings.percentage / 100) : 0) +
-                                    (props.taxSettings.enabled ? (selectedOrder.total_price * props.taxSettings.percentage / 100) : 0) - 
-                                    Number(selectedOrder.loyalty_discount || 0)
-                                ).toLocaleString('id-ID') 
-                            }}</span>
+                            <span>{{ selectedTransactionId ? 'DIBAYAR SEKARANG' : 'TOTAL TERTAGIH' }}</span>
+                            <span>Rp {{ printTotals.grandTotal.toLocaleString('id-ID') }}</span>
                         </div>
-                        <div v-if="selectedOrder.transaction" class="text-[10px] space-y-0.5 pt-1">
+                        
+                        <div v-if="printTotals.transaction" class="text-[10px] space-y-1 pt-1 border-t border-dashed mt-2">
                             <div class="flex justify-between uppercase">
-                                <span>Bayar ({{ selectedOrder.transaction.payment_method }})</span>
-                                <span>{{ Number(selectedOrder.transaction.amount_paid).toLocaleString('id-ID') }}</span>
+                                <span>Bayar ({{ printTotals.transaction.payment_method }})</span>
+                                <span>{{ Number(printTotals.transaction.amount_paid).toLocaleString('id-ID') }}</span>
                             </div>
-                            <div class="flex justify-between font-bold uppercase">
+                            <div v-if="Number(printTotals.transaction.change_amount) > 0" class="flex justify-between uppercase opacity-60 italic">
                                 <span>Kembalian</span>
-                                <span>{{ Number(selectedOrder.transaction.change_amount).toLocaleString('id-ID') }}</span>
+                                <span>{{ Number(printTotals.transaction.change_amount).toLocaleString('id-ID') }}</span>
                             </div>
-                            <div v-if="selectedOrder.points_earned > 0" class="flex justify-between font-bold pt-2 border-t border-dashed mt-2">
+                            <div v-if="printTotals.transaction.points_earned > 0" class="flex justify-between font-bold pt-2 border-t border-dashed mt-2">
                                 <span>Poin Didapat</span>
-                                <span>+{{ selectedOrder.points_earned }} PTS</span>
+                                <span>+{{ printTotals.transaction.points_earned }} PTS</span>
+                            </div>
+                        </div>
+                        <div v-else-if="selectedOrder.total_paid > 0" class="text-[10px] space-y-1 pt-1 border-t border-dashed mt-2">
+                            <div v-for="t in selectedOrder.transactions" :key="t.id" class="border-b border-dotted border-slate-300 pb-1 last:border-0">
+                                <div class="flex justify-between uppercase">
+                                    <span>Bayar ({{ t.payment_method }})</span>
+                                    <span>{{ Number(t.amount_paid).toLocaleString('id-ID') }}</span>
+                                </div>
+                                <div v-if="Number(t.change_amount) > 0" class="flex justify-between uppercase opacity-60 italic">
+                                    <span>Kembalian</span>
+                                    <span>{{ Number(t.change_amount).toLocaleString('id-ID') }}</span>
+                                </div>
+                            </div>
+                            <div class="flex justify-between font-black uppercase border-t border-black pt-1 mt-1">
+                                <span>TOTAL DIBAYAR</span>
+                                <span>Rp {{ Number(selectedOrder.total_paid).toLocaleString('id-ID') }}</span>
                             </div>
                         </div>
                         <div class="text-center mt-6">
@@ -933,6 +1115,22 @@ const getStatusLabel = (status: string) => {
                         >
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                             <span class="text-[10px]">Tutup Shift</span>
+                        </button>
+
+                        <button 
+                            @click="router.get(route('admin.reservations.index'))"
+                            class="flex-1 lg:flex-none h-12 lg:h-14 px-4 lg:px-8 bg-amber-100 text-amber-600 border border-amber-200 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-amber-200 transition-all flex items-center justify-center gap-3"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            <span class="text-[10px]">Cek Reservasi</span>
+                        </button>
+
+                        <button 
+                            @click="showCreateReservationModal = true"
+                            class="flex-1 lg:flex-none h-12 lg:h-14 px-4 lg:px-8 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-amber-600 shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-3"
+                        >
+                            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"></path></svg>
+                            <span class="text-[10px]">Tambah Reservasi</span>
                         </button>
 
                         <button 
@@ -1114,19 +1312,31 @@ const getStatusLabel = (status: string) => {
                                         </div>
                                     </div>
 
-                                    <div v-if="discountFromPoints > 0" class="flex justify-between items-center text-green-300 font-bold border-t border-white/10 pt-4">
-                                        <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Diskon Poin</span>
-                                        <span>- Rp {{ discountFromPoints.toLocaleString() }}</span>
-                                    </div>
+                                    <div class="space-y-2 pb-4 border-b border-white/10">
+                                        <div v-if="discountFromPoints > 0" class="flex justify-between items-center text-green-300 font-bold">
+                                            <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Diskon Poin</span>
+                                            <span>- Rp {{ discountFromPoints.toLocaleString() }}</span>
+                                        </div>
 
-                                    <div v-if="Number(selectedOrder?.dp_amount) > 0" class="flex justify-between items-center text-blue-200 font-bold border-t border-white/10 pt-4 animate-in fade-in duration-500">
-                                        <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Uang Muka (DP)</span>
-                                        <span>- Rp {{ Number(selectedOrder?.dp_amount).toLocaleString() }}</span>
-                                    </div>
+                                        <div v-if="Number(paymentForm.discount_amount) > 0" class="flex justify-between items-center text-amber-200 font-bold animate-in fade-in duration-500">
+                                            <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Potongan Tunai</span>
+                                            <span>- Rp {{ Number(paymentForm.discount_amount).toLocaleString() }}</span>
+                                        </div>
 
-                                    <div v-if="paymentForm.discount_amount > 0" class="flex justify-between items-center text-amber-200 font-bold border-t border-white/10 pt-4 animate-in fade-in duration-500">
-                                        <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Diskon Manual</span>
-                                        <span>- Rp {{ Number(paymentForm.discount_amount).toLocaleString() }}</span>
+                                        <div v-if="percentageDiscountAmount > 0" class="flex justify-between items-center text-amber-200 font-bold animate-in fade-in duration-500">
+                                            <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Diskon Persen ({{ paymentForm.discount_percentage }}%)</span>
+                                            <span>- Rp {{ percentageDiscountAmount.toLocaleString() }}</span>
+                                        </div>
+
+                                        <div v-if="Number(selectedOrder?.dp_amount) > 0" class="flex justify-between items-center text-blue-200 font-bold animate-in fade-in duration-500">
+                                            <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Uang Muka (DP)</span>
+                                            <span>- Rp {{ Number(selectedOrder?.dp_amount).toLocaleString() }}</span>
+                                        </div>
+
+                                        <div v-if="Number(selectedOrder?.total_paid) > 0" class="flex justify-between items-center text-blue-100 font-bold animate-in fade-in duration-500">
+                                            <span class="text-[9px] lg:text-[10px] font-black uppercase tracking-[0.2em]">Sudah Dibayar</span>
+                                            <span>- Rp {{ Number(selectedOrder?.total_paid).toLocaleString() }}</span>
+                                        </div>
                                     </div>
 
                                     <div>
@@ -1274,16 +1484,49 @@ const getStatusLabel = (status: string) => {
                                 </div>
                             </button>
 
-                            <div v-if="isDiscountManualExpanded || paymentForm.discount_amount > 0" class="bg-slate-50 border border-slate-200 rounded-[32px] p-6 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                                <div class="relative">
-                                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">Rp</span>
-                                    <input 
-                                        v-model="paymentForm.discount_amount"
-                                        type="number"
-                                        placeholder="Jumlah Diskon..."
-                                        class="w-full bg-white border-slate-100 rounded-2xl py-3 pl-12 pr-4 text-sm font-bold focus:border-blue-600 transition-all outline-none"
-                                    >
+                            <div v-if="isDiscountManualExpanded || paymentForm.discount_amount > 0 || paymentForm.discount_percentage > 0" class="bg-slate-50 border border-slate-200 rounded-[32px] p-6 space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <!-- Percentage Discount Buttons -->
+                                <div class="space-y-3">
+                                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Pilih Diskon Persen</p>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <button 
+                                            v-for="p in [5, 10]" 
+                                            :key="p"
+                                            @click="paymentForm.discount_percentage = p"
+                                            type="button"
+                                            :class="Number(paymentForm.discount_percentage) === p ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20 border-amber-600' : 'bg-white text-slate-600 border-slate-100 hover:border-amber-600'"
+                                            class="py-3 rounded-[20px] border text-sm font-black transition-all flex items-center justify-center gap-1"
+                                        >
+                                            {{ p }}%
+                                        </button>
+                                        <div class="relative">
+                                            <input 
+                                                v-model="paymentForm.discount_percentage"
+                                                type="number"
+                                                placeholder="Lainnya"
+                                                class="w-full bg-white border-slate-100 rounded-[20px] py-3 pl-4 pr-10 text-sm font-bold focus:border-amber-600 transition-all outline-none"
+                                            >
+                                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">%</span>
+                                        </div>
+                                    </div>
                                 </div>
+
+                                <div class="h-px bg-slate-200 mx-2"></div>
+
+                                <!-- Manual Amount Input -->
+                                <div class="space-y-3">
+                                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Atau Masukan Nominal Potongan</p>
+                                    <div class="relative">
+                                        <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">Rp</span>
+                                        <input 
+                                            v-model="paymentForm.discount_amount"
+                                            type="number"
+                                            placeholder="Jumlah Diskon..."
+                                            class="w-full bg-white border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-base font-bold focus:border-blue-600 transition-all outline-none"
+                                        >
+                                    </div>
+                                </div>
+
                                 <input 
                                     v-model="paymentForm.discount_notes"
                                     type="text"
@@ -1739,7 +1982,7 @@ const getStatusLabel = (status: string) => {
                     leave-from-class="opacity-100"
                     leave-to-class="opacity-0"
                 >
-                    <div v-if="isVariantModalOpen" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-6 text-slate-900 leading-normal">
+                    <div v-if="isVariantModalOpen" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[400] flex items-center justify-center p-6 text-slate-900 leading-normal">
                         <div class="relative bg-white border border-slate-200 rounded-[48px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
                             <div class="p-10 border-b border-slate-100 text-center">
                                 <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em] mb-2">Pilih Varian</p>
@@ -1776,7 +2019,7 @@ const getStatusLabel = (status: string) => {
                     leave-from-class="opacity-100"
                     leave-to-class="opacity-0"
                 >
-                    <div v-if="showCustomModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[250] flex items-center justify-center p-6 text-slate-900 leading-normal">
+                    <div v-if="showCustomModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[400] flex items-center justify-center p-6 text-slate-900 leading-normal">
                         <div class="relative bg-white border border-slate-200 rounded-[48px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
                             <!-- Header -->
                             <div class="p-10 border-b border-slate-100 text-center">
@@ -1938,10 +2181,12 @@ const getStatusLabel = (status: string) => {
                             <div class="grid grid-cols-2 gap-3">
                                 <button 
                                     @click="selectOrderAction(selectedOrderForQuickAction)"
-                                    class="h-16 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:bg-blue-700 active:scale-95 transition-all flex flex-col items-center justify-center gap-1"
+                                    :disabled="selectedOrderForQuickAction?.status === 'paid'"
+                                    class="h-16 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg transition-all flex flex-col items-center justify-center gap-1"
+                                    :class="selectedOrderForQuickAction?.status === 'paid' ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700 active:scale-95'"
                                 >
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                                    <span>BAYAR SEKARANG</span>
+                                    <span>{{ selectedOrderForQuickAction?.status === 'paid' ? 'SUDAH DIBAYAR' : 'BAYAR SEKARANG' }}</span>
                                 </button>
                                 <button 
                                     @click="continueOrder(selectedOrderForQuickAction)"
@@ -1969,11 +2214,14 @@ const getStatusLabel = (status: string) => {
                                     <span>CETAK BT</span>
                                 </button>
                                 <button 
-                                    @click="triggerPrint(selectedOrderForQuickAction, 'kitchen_qc')"
+                                    @click="handleKitchenPrint(selectedOrderForQuickAction)"
                                     class="h-14 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-[8px] uppercase tracking-widest transition-all hover:bg-slate-100 flex flex-col items-center justify-center gap-1"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11l-8 8-4-4m0-8l8 8 4-4"></path></svg>
-                                    <span>CETAK DAPUR</span>
+                                    <span v-if="selectedOrderForQuickAction?.order_items?.some(i => !i.is_printed)">
+                                        CETAK ITEM BARU ({{ selectedOrderForQuickAction.order_items.filter(i => !i.is_printed).length }})
+                                    </span>
+                                    <span v-else>CETAK DAPUR</span>
                                 </button>
                                 <button 
                                     @click="confirmOrder(selectedOrderForQuickAction)"
@@ -1987,12 +2235,163 @@ const getStatusLabel = (status: string) => {
                                     <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                     <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest mt-1">SIAP</span>
                                 </div>
+                                <button 
+                                    @click="() => {
+                                        if (selectedOrderForQuickAction?.status !== 'paid') {
+                                            if (confirm('Pesanan ini belum dibayar. Apakah Anda yakin ingin mengosongkan meja secara paksa?')) {
+                                                updateOrderStatus(selectedOrderForQuickAction.id, 'completed');
+                                                isQuickActionModalOpen = false;
+                                            }
+                                        } else {
+                                            updateOrderStatus(selectedOrderForQuickAction.id, 'completed');
+                                            isQuickActionModalOpen = false;
+                                        }
+                                    }"
+                                    class="h-14 bg-red-50 text-red-500 border border-red-200 rounded-2xl font-black text-[8px] uppercase tracking-widest transition-all hover:bg-red-100 flex flex-col items-center justify-center gap-1"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    <span>KOSONGKAN</span>
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
             </Transition>
         </Teleport>
+
+            <!-- Create Reservation Modal -->
+            <Teleport to="body">
+                <div v-if="showCreateReservationModal" class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div class="relative max-w-2xl w-full bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div class="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <div>
+                                <h3 class="font-black text-slate-900 uppercase text-xs tracking-widest">Tambah Reservasi Manual</h3>
+                                <p class="text-[10px] text-slate-400 font-bold mt-1">Gunakan untuk input pesanan via WhatsApp/Telepon</p>
+                            </div>
+                            <button @click="showCreateReservationModal = false" class="p-3 hover:bg-white hover:shadow-sm rounded-2xl transition-all group">
+                                <svg class="w-5 h-5 text-slate-400 group-hover:text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        
+                        <form @submit.prevent="submitReservation" class="p-8 space-y-6">
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="space-y-2 text-left">
+                                    <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nama Pelanggan</label>
+                                    <input v-model="reservationForm.name" type="text" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12" placeholder="Contoh: Budi Santoso">
+                                </div>
+                                <div class="space-y-2 text-left">
+                                    <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nomor WhatsApp</label>
+                                    <input v-model="reservationForm.phone" type="text" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12" placeholder="08xxxxxxxxxx">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="space-y-2 text-left">
+                                    <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Pilih Meja</label>
+                                    <select v-model="reservationForm.table_id" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12">
+                                        <option value="" disabled>Pilih Meja...</option>
+                                        <option v-for="table in tables" :key="table.id" :value="table.id">Meja {{ table.table_number }} ({{ table.status }})</option>
+                                    </select>
+                                </div>
+                                <div class="space-y-2 text-left">
+                                    <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Jumlah Orang (Pax)</label>
+                                    <input v-model="reservationForm.num_people" type="number" min="1" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="space-y-2 text-left">
+                                    <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Waktu Reservasi</label>
+                                    <input v-model="reservationForm.reservation_time" type="datetime-local" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 h-12">
+                                </div>
+                                <div class="space-y-2 text-left">
+                                    <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nominal DP (Bisa Diedit)</label>
+                                    <div class="relative">
+                                        <span class="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400 text-xs">Rp</span>
+                                        <input v-model="reservationForm.dp_amount" type="number" min="0" required class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold pl-12 pr-4 h-12 bg-blue-50/30">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Pre-order Menu Selection -->
+                            <div class="space-y-4 pt-4 border-t border-slate-100">
+                                <div class="flex justify-between items-end">
+                                    <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Pre-order Menu (Opsional)</label>
+                                    <span v-if="preOrderTotal > 0" class="text-xs font-black text-blue-600">Terpilih: Rp {{ preOrderTotal.toLocaleString() }}</span>
+                                </div>
+                                
+                                <!-- Search Menu -->
+                                <div class="relative">
+                                    <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                    <input v-model="preOrderSearch" type="text" placeholder="Cari menu untuk pre-order..." class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold pl-12 pr-4 h-12 bg-slate-50/50">
+                                    
+                                    <!-- Search Results -->
+                                    <div v-if="preOrderResults.length > 0" class="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+                                        <div v-for="menu in preOrderResults" :key="menu.id" class="border-b border-slate-50 last:border-0 text-left">
+                                            <button type="button" @click="handleMenuClick(menu, 'preorder')" class="w-full p-4 flex justify-between items-center hover:bg-blue-50 transition-colors">
+                                                <div class="flex flex-col">
+                                                    <span class="font-bold text-slate-700 text-xs">{{ menu.name }}</span>
+                                                    <span v-if="menu.variants && menu.variants.length > 0" class="text-[9px] font-black text-blue-600 uppercase tracking-widest mt-1">{{ menu.variants.length }} Varian Tersedia</span>
+                                                </div>
+                                                <span class="font-black text-blue-600 text-xs text-right">
+                                                    {{ menu.variants && menu.variants.length > 0 ? 'Mulai Rp ' + Number(menu.price).toLocaleString() : 'Rp ' + Number(menu.price).toLocaleString() }}
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Selected Items List -->
+                                <div v-if="reservationForm.items.length > 0" class="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                                    <div v-for="(item, idx) in reservationForm.items" :key="idx" class="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50 space-y-3 shadow-sm">
+                                        <div class="flex justify-between items-start">
+                                            <div class="flex-1 text-left">
+                                                <div class="font-black text-slate-900 text-sm">{{ item.menu.name }} <span v-if="item.variant" class="text-blue-600">({{ item.variant.name }})</span></div>
+                                                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Rp {{ (item.variant ? item.variant.price : item.menu.price).toLocaleString() }}</div>
+                                            </div>
+                                            <div class="flex items-center gap-3">
+                                                <div class="flex items-center gap-2 bg-white rounded-lg p-1 border border-blue-200">
+                                                    <button type="button" @click="item.quantity > 1 ? item.quantity-- : removePreOrderMenu(idx)" class="w-7 h-7 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-md font-black">-</button>
+                                                    <span class="font-black text-xs min-w-[20px] text-center">{{ item.quantity }}</span>
+                                                    <button type="button" @click="item.quantity++" class="w-7 h-7 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-md font-black">+</button>
+                                                </div>
+                                                <button type="button" @click="removePreOrderMenu(idx)" class="p-2 text-slate-300 hover:text-red-500 transition-colors">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Per-item Notes (for Ice/Hot, Sambal choices, etc.) -->
+                                        <div class="relative">
+                                            <input 
+                                                v-model="item.notes" 
+                                                type="text" 
+                                                placeholder="Contoh: Es, Sambal Matah, Nasi Setengah..." 
+                                                class="w-full bg-white/80 border-slate-100 rounded-xl py-2 px-3 text-[10px] font-medium focus:border-blue-600 focus:bg-white transition-all outline-none italic"
+                                            >
+                                            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-300 uppercase tracking-widest pointer-events-none">Opsi</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-2 text-left">
+                                <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Catatan Tambahan</label>
+                                <textarea v-model="reservationForm.notes" class="block w-full rounded-2xl border-slate-200 focus:border-blue-600 focus:ring-blue-600 font-bold px-4 py-3" rows="2" placeholder="Sebutkan jika ada permintaan khusus..."></textarea>
+                            </div>
+
+                            <div class="pt-4 flex gap-4">
+                                <button type="button" @click="showCreateReservationModal = false" class="flex-1 h-14 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">
+                                    Batal
+                                </button>
+                                <button type="submit" :disabled="reservationForm.processing" class="flex-[2] h-14 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50">
+                                    {{ reservationForm.processing ? 'Menyimpan...' : 'Simpan Reservasi' }}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </Teleport>
 
         <!-- Add Customer Modal -->
         <Teleport to="body">

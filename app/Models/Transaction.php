@@ -18,6 +18,7 @@ class Transaction extends Model
         'loyalty_discount',
         'dp_amount',
         'discount_amount',
+        'discount_percentage',
     ];
 
     public function shift()
@@ -28,5 +29,10 @@ class Transaction extends Model
     public function order()
     {
         return $this->belongsTo(Order::class);
+    }
+
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
     }
 }

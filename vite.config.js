@@ -19,6 +19,9 @@ export default defineConfig({
         }),
         VitePWA({
             registerType: 'autoUpdate',
+            devOptions: {
+                enabled: true
+            },
             manifest: {
                 name: 'POS',
                 short_name: 'POS',
@@ -27,9 +30,11 @@ export default defineConfig({
                 background_color: '#111827',
                 display: 'standalone',
                 orientation: 'any',
+                start_url: 'http://127.0.0.1:8000/',
+                scope: 'http://127.0.0.1:8000/',
                 icons: [
                     {
-                        src: '/icons/icon.png',
+                        src: 'http://127.0.0.1:8000/icons/icon.png',
                         sizes: '512x512',
                         type: 'image/png',
                         purpose: 'any maskable'
@@ -40,5 +45,9 @@ export default defineConfig({
     ],
     server: {
         host: '127.0.0.1',
+        cors: true,
+        hmr: {
+            host: '127.0.0.1',
+        },
     },
 });

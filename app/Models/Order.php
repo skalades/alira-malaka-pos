@@ -20,8 +20,11 @@ class Order extends Model
         'reservation_id',
         'dp_amount',
         'discount_amount',
+        'discount_percentage',
         'discount_notes',
     ];
+
+    protected $appends = ['total_paid'];
 
     public function customer()
     {
@@ -38,9 +41,16 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
-    public function transaction()
+    public function transactions()
     {
-        return $this->hasOne(Transaction::class);
+        return $this->hasMany(Transaction::class);
+    }
+
+    public function getTotalPaidAttribute()
+    {
+        return $this->transactions->sum(function($t) {
+            return (float)$t->amount_paid - (float)$t->change_amount;
+        });
     }
 
     public function reservation()

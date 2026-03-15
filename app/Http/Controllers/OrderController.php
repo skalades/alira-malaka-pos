@@ -39,9 +39,16 @@ class OrderController extends Controller
 
             if ($order) {
                 // Append to existing order
-                $order->update([
+                $updateData = [
                     'dp_amount' => $order->dp_amount + ($request->dp_amount ?? 0),
-                ]);
+                ];
+
+                // If it was already paid, reset status so cashier knows there's a new bill
+                if ($order->status === 'paid') {
+                    $updateData['status'] = 'processing';
+                }
+
+                $order->update($updateData);
             } else {
                 // Create new order
                 $order = Order::create([
@@ -146,22 +153,27 @@ class OrderController extends Controller
         }
         
         $manualDiscount = (float)$request->input('discount_amount', 0);
+        $discountPercentage = (float)$request->input('discount_percentage', 0);
+        $percentageAmount = ($order->total_price * $discountPercentage) / 100;
+        $totalDiscountAmount = $manualDiscount + $percentageAmount;
         
-        $finalTotal = max(0, $grandTotal - $loyaltyDiscount - $order->dp_amount - $manualDiscount);
+        $totalAlreadyPaid = (float)$order->total_paid;
+        $finalTotal = max(0, $grandTotal - $loyaltyDiscount - $order->dp_amount - $totalDiscountAmount - $totalAlreadyPaid);
 
         $request->validate([
             'payment_method' => 'required|in:cash,qris,transfer',
-            'amount_paid' => 'required|numeric|min:' . $finalTotal,
+            'amount_paid' => 'required|numeric|min:' . (floor($finalTotal)),
             'change_amount' => 'required|numeric|min:0',
             'customer_id' => 'nullable|exists:customers,id',
             'points_redeemed' => 'nullable|integer|min:0',
             'points_earned' => 'nullable|integer|min:0',
             'discount_amount' => 'nullable|numeric|min:0',
+            'discount_percentage' => 'nullable|numeric|min:0',
             'discount_notes' => 'nullable|string',
         ]);
 
-        return DB::transaction(function () use ($request, $order, $shift, $loyaltyDiscount, $finalTotal, $manualDiscount, $grandTotal) {
-            $order->transaction()->create([
+        return DB::transaction(function () use ($request, $order, $shift, $loyaltyDiscount, $finalTotal, $manualDiscount, $discountPercentage, $grandTotal) {
+            $transaction = $order->transactions()->create([
                 'shift_id' => $shift->id,
                 'payment_method' => $request->payment_method,
                 'amount_paid' => $request->amount_paid,
@@ -172,6 +184,12 @@ class OrderController extends Controller
                 'loyalty_discount' => $loyaltyDiscount,
                 'dp_amount' => $order->dp_amount,
                 'discount_amount' => $manualDiscount,
+                'discount_percentage' => $discountPercentage,
+            ]);
+
+            // Link items that haven't been paid for yet to this transaction
+            $order->orderItems()->whereNull('transaction_id')->update([
+                'transaction_id' => $transaction->id
             ]);
 
             $order->update([
@@ -181,6 +199,7 @@ class OrderController extends Controller
                 'points_earned' => $request->points_earned ?? 0,
                 'loyalty_discount' => $loyaltyDiscount,
                 'discount_amount' => $manualDiscount,
+                'discount_percentage' => $discountPercentage,
                 'discount_notes' => $request->discount_notes,
             ]);
 

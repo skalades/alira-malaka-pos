@@ -22,6 +22,7 @@ Route::middleware('auth')->group(function () {
         return Inertia::render('Dashboard');
     })->middleware(['verified', 'role:admin'])->name('dashboard');
 
+    // Cashier & Admin Shared (Non-prefixed)
     Route::middleware('role:cashier,admin')->group(function () {
         Route::get('/cashier', [\App\Http\Controllers\CashierController::class, 'index'])->name('cashier.index');
         Route::patch('/cashier/order/{order}/status', [\App\Http\Controllers\CashierController::class, 'updateStatus'])->name('cashier.order.status');
@@ -31,51 +32,59 @@ Route::middleware('auth')->group(function () {
         // Shift Management
         Route::post('/shift/start', [ShiftController::class, 'start'])->name('shift.start');
         Route::post('/shift/end', [ShiftController::class, 'end'])->name('shift.end');
+
+        // Customers (Loyalty) for Cashier
+        Route::get('/cashier/customers/search', [\App\Http\Controllers\CustomerController::class, 'search'])->name('cashier.customers.search');
+        Route::post('/cashier/customers', [\App\Http\Controllers\CustomerController::class, 'store'])->name('cashier.customers.store');
     });
 
-    Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
-        Route::get('/', [\App\Http\Controllers\AdminController::class, 'dashboard'])->name('dashboard');
-        Route::get('/menus', [\App\Http\Controllers\AdminController::class, 'menus'])->name('menus');
-        
-        // Category Management
-        Route::post('/categories', [\App\Http\Controllers\AdminController::class, 'storeCategory'])->name('categories.store');
-        Route::patch('/categories/{category}', [\App\Http\Controllers\AdminController::class, 'updateCategory'])->name('categories.update');
-        Route::delete('/categories/{category}', [\App\Http\Controllers\AdminController::class, 'deleteCategory'])->name('categories.delete');
+    // Admin Prefixed Routes
+    Route::prefix('admin')->name('admin.')->group(function () {
+        // Shared with Cashier (Reservations)
+        Route::middleware('role:cashier,admin')->group(function () {
+            Route::get('/reservations', [\App\Http\Controllers\ReservationController::class, 'index'])->name('reservations.index');
+            Route::post('/reservations', [\App\Http\Controllers\ReservationController::class, 'store'])->name('reservations.store');
+            Route::patch('/reservations/{reservation}/status', [\App\Http\Controllers\ReservationController::class, 'updateStatus'])->name('reservations.status');
+            Route::get('/reservations/table/{table}', [\App\Http\Controllers\ReservationController::class, 'activeForTable'])->name('reservations.table');
+            Route::post('/reservations/{reservation}/check-in', [\App\Http\Controllers\ReservationController::class, 'checkIn'])->name('reservations.checkin');
+        });
 
-        // Menu Management
-        Route::post('/menus', [\App\Http\Controllers\AdminController::class, 'storeMenu'])->name('menus.store');
-        Route::post('/menus/{menu}', [\App\Http\Controllers\AdminController::class, 'updateMenu'])->name('menus.update'); // Using POST for multipart update
-        Route::delete('/menus/{menu}', [\App\Http\Controllers\AdminController::class, 'deleteMenu'])->name('menus.delete');
+        // Admin Only
+        Route::middleware('role:admin')->group(function () {
+            Route::get('/', [\App\Http\Controllers\AdminController::class, 'dashboard'])->name('dashboard');
+            Route::get('/menus', [\App\Http\Controllers\AdminController::class, 'menus'])->name('menus');
+            
+            // Category Management
+            Route::post('/categories', [\App\Http\Controllers\AdminController::class, 'storeCategory'])->name('categories.store');
+            Route::patch('/categories/{category}', [\App\Http\Controllers\AdminController::class, 'updateCategory'])->name('categories.update');
+            Route::delete('/categories/{category}', [\App\Http\Controllers\AdminController::class, 'deleteCategory'])->name('categories.delete');
 
-        Route::post('/table/{table}/qr', [\App\Http\Controllers\AdminController::class, 'generateQR'])->name('table.qr');
+            // Menu Management
+            Route::post('/menus', [\App\Http\Controllers\AdminController::class, 'storeMenu'])->name('menus.store');
+            Route::post('/menus/{menu}', [\App\Http\Controllers\AdminController::class, 'updateMenu'])->name('menus.update');
+            Route::delete('/menus/{menu}', [\App\Http\Controllers\AdminController::class, 'deleteMenu'])->name('menus.delete');
 
-        // Settings
-        Route::get('/settings', [\App\Http\Controllers\AdminController::class, 'settings'])->name('settings');
-        Route::post('/settings', [\App\Http\Controllers\AdminController::class, 'updateSettings'])->name('settings.update');
+            Route::post('/table/{table}/qr', [\App\Http\Controllers\AdminController::class, 'generateQR'])->name('table.qr');
 
-        // Reports
-        Route::get('/reports', [\App\Http\Controllers\AdminController::class, 'reports'])->name('reports');
-        Route::get('/reports/export', [\App\Http\Controllers\AdminController::class, 'exportPdf'])->name('reports.export');
+            // Settings
+            Route::get('/settings', [\App\Http\Controllers\AdminController::class, 'settings'])->name('settings');
+            Route::post('/settings', [\App\Http\Controllers\AdminController::class, 'updateSettings'])->name('settings.update');
 
-        // Transactions History
-        Route::get('/transactions', [\App\Http\Controllers\AdminController::class, 'transactions'])->name('transactions');
-        Route::delete('/transactions/{transaction}', [\App\Http\Controllers\AdminController::class, 'deleteTransaction'])->name('transactions.delete');
+            // Reports
+            Route::get('/reports', [\App\Http\Controllers\AdminController::class, 'reports'])->name('reports');
+            Route::get('/reports/export', [\App\Http\Controllers\AdminController::class, 'exportPdf'])->name('reports.export');
 
-        // Customers (Loyalty)
-        Route::get('/customers', [\App\Http\Controllers\CustomerController::class, 'index'])->name('customers.index');
-        Route::post('/customers', [\App\Http\Controllers\CustomerController::class, 'store'])->name('customers.store');
-        Route::patch('/customers/{customer}', [\App\Http\Controllers\CustomerController::class, 'update'])->name('customers.update');
-        Route::delete('/customers/{customer}', [\App\Http\Controllers\CustomerController::class, 'delete'])->name('customers.delete');
+            // Transactions History
+            Route::get('/transactions', [\App\Http\Controllers\AdminController::class, 'transactions'])->name('transactions');
+            Route::delete('/transactions/{transaction}', [\App\Http\Controllers\AdminController::class, 'deleteTransaction'])->name('transactions.delete');
 
-        // Reservations
-        Route::get('/reservations', [\App\Http\Controllers\ReservationController::class, 'index'])->name('reservations.index');
-        Route::patch('/reservations/{reservation}/status', [\App\Http\Controllers\ReservationController::class, 'updateStatus'])->name('reservations.status');
-        Route::get('/reservations/table/{table}', [\App\Http\Controllers\ReservationController::class, 'activeForTable'])->name('reservations.table');
-        Route::post('/reservations/{reservation}/check-in', [\App\Http\Controllers\ReservationController::class, 'checkIn'])->name('reservations.checkin');
+            // Customers (Loyalty) Management
+            Route::get('/customers', [\App\Http\Controllers\CustomerController::class, 'index'])->name('customers.index');
+            Route::post('/customers', [\App\Http\Controllers\CustomerController::class, 'store'])->name('customers.store');
+            Route::patch('/customers/{customer}', [\App\Http\Controllers\CustomerController::class, 'update'])->name('customers.update');
+            Route::delete('/customers/{customer}', [\App\Http\Controllers\CustomerController::class, 'delete'])->name('customers.delete');
+        });
     });
-
-    Route::get('/cashier/customers/search', [\App\Http\Controllers\CustomerController::class, 'search'])->name('cashier.customers.search');
-    Route::post('/cashier/customers', [\App\Http\Controllers\CustomerController::class, 'store'])->name('cashier.customers.store');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

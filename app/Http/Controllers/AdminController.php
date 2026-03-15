@@ -249,9 +249,14 @@ class AdminController extends Controller
         $startDate = $request->input('start_date', now()->startOfMonth()->toDateString());
         $endDate = $request->input('end_date', now()->toDateString());
 
-        $transactions = \App\Models\Transaction::with('order.orderItems.menu')
+        $transactions = \App\Models\Transaction::with(['order.orderItems.menu'])
             ->whereBetween('transaction_time', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
             ->get();
+
+        $taxEnabled = Setting::get('tax_enabled', '0') === '1';
+        $taxPercentage = (float)Setting::get('tax_percentage', '10');
+        $serviceEnabled = Setting::get('service_charge_enabled', '0') === '1';
+        $servicePercentage = (float)Setting::get('service_charge_percentage', '5');
 
         $itemizedSales = [];
         $paymentBreakdown = [
@@ -260,6 +265,10 @@ class AdminController extends Controller
             'transfer' => 0
         ];
         $totalRevenue = 0;
+        $totalSubtotal = 0;
+        $totalTax = 0;
+        $totalService = 0;
+        $totalDiscount = 0;
         $orderCount = $transactions->count();
 
         foreach ($transactions as $transaction) {
@@ -273,18 +282,38 @@ class AdminController extends Controller
                 $paymentBreakdown['other'] = ($paymentBreakdown['other'] ?? 0) + $revenue;
             }
 
+            $currentTransactionSubtotal = 0;
+            // Get subtotal for items belonging strictly to THIS transaction
             foreach ($transaction->order->orderItems as $item) {
-                $menuId = $item->menu_id;
-                if (!isset($itemizedSales[$menuId])) {
-                    $itemizedSales[$menuId] = [
-                        'name' => $item->menu->name,
-                        'stock' => $item->menu->stock,
-                        'quantity' => 0,
-                        'revenue' => 0
-                    ];
+                if ($item->transaction_id == $transaction->id) {
+                    $currentTransactionSubtotal += ($item->price_at_time * $item->quantity);
+                    
+                    $menuId = $item->menu_id;
+                    if (!isset($itemizedSales[$menuId])) {
+                        $itemizedSales[$menuId] = [
+                            'name' => $item->menu->name,
+                            'stock' => $item->menu->stock,
+                            'quantity' => 0,
+                            'revenue' => 0
+                        ];
+                    }
+                    $itemizedSales[$menuId]['quantity'] += $item->quantity;
+                    $itemizedSales[$menuId]['revenue'] += $item->price_at_time * $item->quantity;
                 }
-                $itemizedSales[$menuId]['quantity'] += $item->quantity;
-                $itemizedSales[$menuId]['revenue'] += $item->price_at_time * $item->quantity;
+            }
+
+            $totalSubtotal += $currentTransactionSubtotal;
+            if ($taxEnabled) {
+                $totalTax += ($currentTransactionSubtotal * $taxPercentage / 100);
+            }
+            if ($serviceEnabled) {
+                $totalService += ($currentTransactionSubtotal * $servicePercentage / 100);
+            }
+
+            $totalDiscount += (float)$transaction->loyalty_discount;
+            $totalDiscount += (float)$transaction->discount_amount;
+            if ($transaction->discount_percentage > 0) {
+                $totalDiscount += ($currentTransactionSubtotal * $transaction->discount_percentage / 100);
             }
         }
 
@@ -308,6 +337,10 @@ class AdminController extends Controller
         return Inertia::render('Admin/Reports', [
             'itemizedSales' => array_values($itemizedSales),
             'totalRevenue' => $totalRevenue,
+            'totalSubtotal' => $totalSubtotal,
+            'totalTax' => $totalTax,
+            'totalService' => $totalService,
+            'totalDiscount' => $totalDiscount,
             'orderCount' => $orderCount,
             'chartData' => $dailyData,
             'paymentBreakdown' => $paymentBreakdown,
@@ -327,9 +360,14 @@ class AdminController extends Controller
         $startDate = $request->input('start_date', now()->startOfMonth()->toDateString());
         $endDate = $request->input('end_date', now()->toDateString());
 
-        $transactions = \App\Models\Transaction::with('order.orderItems.menu')
+        $transactions = \App\Models\Transaction::with(['order.orderItems.menu'])
             ->whereBetween('transaction_time', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
             ->get();
+
+        $taxEnabled = Setting::get('tax_enabled', '0') === '1';
+        $taxPercentage = (float)Setting::get('tax_percentage', '10');
+        $serviceEnabled = Setting::get('service_charge_enabled', '0') === '1';
+        $servicePercentage = (float)Setting::get('service_charge_percentage', '5');
 
         $itemizedSales = [];
         $paymentBreakdown = [
@@ -338,6 +376,10 @@ class AdminController extends Controller
             'transfer' => 0
         ];
         $totalRevenue = 0;
+        $totalSubtotal = 0;
+        $totalTax = 0;
+        $totalService = 0;
+        $totalDiscount = 0;
 
         foreach ($transactions as $transaction) {
             $revenue = $transaction->amount_paid - $transaction->change_amount;
@@ -350,18 +392,37 @@ class AdminController extends Controller
                 $paymentBreakdown['other'] = ($paymentBreakdown['other'] ?? 0) + $revenue;
             }
 
+            $currentTransactionSubtotal = 0;
             foreach ($transaction->order->orderItems as $item) {
-                $menuId = $item->menu_id;
-                if (!isset($itemizedSales[$menuId])) {
-                    $itemizedSales[$menuId] = [
-                        'name' => $item->menu->name,
-                        'stock' => $item->menu->stock,
-                        'quantity' => 0,
-                        'revenue' => 0
-                    ];
+                if ($item->transaction_id == $transaction->id) {
+                    $currentTransactionSubtotal += ($item->price_at_time * $item->quantity);
+
+                    $menuId = $item->menu_id;
+                    if (!isset($itemizedSales[$menuId])) {
+                        $itemizedSales[$menuId] = [
+                            'name' => $item->menu->name,
+                            'stock' => $item->menu->stock,
+                            'quantity' => 0,
+                            'revenue' => 0
+                        ];
+                    }
+                    $itemizedSales[$menuId]['quantity'] += $item->quantity;
+                    $itemizedSales[$menuId]['revenue'] += $item->price_at_time * $item->quantity;
                 }
-                $itemizedSales[$menuId]['quantity'] += $item->quantity;
-                $itemizedSales[$menuId]['revenue'] += $item->price_at_time * $item->quantity;
+            }
+
+            $totalSubtotal += $currentTransactionSubtotal;
+            if ($taxEnabled) {
+                $totalTax += ($currentTransactionSubtotal * $taxPercentage / 100);
+            }
+            if ($serviceEnabled) {
+                $totalService += ($currentTransactionSubtotal * $servicePercentage / 100);
+            }
+
+            $totalDiscount += (float)$transaction->loyalty_discount;
+            $totalDiscount += (float)$transaction->discount_amount;
+            if ($transaction->discount_percentage > 0) {
+                $totalDiscount += ($currentTransactionSubtotal * $transaction->discount_percentage / 100);
             }
         }
 
@@ -378,6 +439,10 @@ class AdminController extends Controller
             'itemizedSales' => array_values($itemizedSales),
             'paymentBreakdown' => $paymentBreakdown,
             'totalRevenue' => $totalRevenue,
+            'totalSubtotal' => $totalSubtotal,
+            'totalTax' => $totalTax,
+            'totalService' => $totalService,
+            'totalDiscount' => $totalDiscount,
             'totalOpening' => $shiftStats->total_opening ?? 0,
             'totalClosing' => $shiftStats->total_closing ?? 0,
             'startDate' => $startDate,

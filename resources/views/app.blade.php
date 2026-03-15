@@ -8,7 +8,11 @@
 
         <!-- PWA Meta Tags -->
         <meta name="theme-color" content="#111827">
-        <link rel="manifest" href="/build/manifest.webmanifest">
+        @if (file_exists(public_path('hot')))
+            <link rel="manifest" href="http://127.0.0.1:5173/manifest.webmanifest" crossorigin="anonymous">
+        @else
+            <link rel="manifest" href="/build/manifest.webmanifest">
+        @endif
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">

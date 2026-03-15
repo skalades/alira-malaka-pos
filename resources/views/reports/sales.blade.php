@@ -71,6 +71,32 @@
 
     <!-- Final Summary Section -->
     <div style="margin-top: 30px;">
+        <h3 style="text-transform: uppercase; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Ringkasan Pendapatan</h3>
+        <table>
+            <tr>
+                <td style="width: 50%; background-color: #f9f9f9; font-weight: bold;">TOTAL SUBTOTAL PRODUK</td>
+                <td class="text-right">Rp {{ number_format($totalSubtotal, 0, ',', '.') }}</td>
+            </tr>
+            <tr>
+                <td style="width: 50%; background-color: #f9f9f9; font-weight: bold;">TOTAL PAJAK</td>
+                <td class="text-right">Rp {{ number_format($totalTax, 0, ',', '.') }}</td>
+            </tr>
+            <tr>
+                <td style="width: 50%; background-color: #f9f9f9; font-weight: bold;">TOTAL SERVICE CHARGE</td>
+                <td class="text-right">Rp {{ number_format($totalService, 0, ',', '.') }}</td>
+            </tr>
+            <tr>
+                <td style="width: 50%; background-color: #f9f9f9; font-weight: bold; color: red;">TOTAL DISKON</td>
+                <td class="text-right" style="color: red;">- Rp {{ number_format($totalDiscount, 0, ',', '.') }}</td>
+            </tr>
+            <tr class="total-row" style="font-size: 14px;">
+                <td style="width: 50%; background-color: #eee;">TOTAL PENDAPATAN BERSIH (NET)</td>
+                <td class="text-right" style="color: #2563eb;">Rp {{ number_format($totalRevenue, 0, ',', '.') }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="margin-top: 30px;">
         <h3 style="text-transform: uppercase; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Pendapatan per Metode Pembayaran</h3>
         <table>
             <thead>
@@ -105,15 +131,6 @@
                     <td class="text-right">Rp {{ number_format($totalRevenue, 0, ',', '.') }}</td>
                 </tr>
             </tfoot>
-        </table>
-    </div>
-
-    <div style="margin-top: 30px; border-top: 2px solid #333; padding-top: 10px;">
-        <table style="border: none;">
-            <tr style="font-size: 16px; font-weight: bold;">
-                <td style="border: none;">GRAND TOTAL PENDAPATAN</td>
-                <td style="border: none; color: #2563eb;" class="text-right">Rp {{ number_format($totalRevenue, 0, ',', '.') }}</td>
-            </tr>
         </table>
     </div>
 

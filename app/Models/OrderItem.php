@@ -13,6 +13,8 @@ class OrderItem extends Model
         'quantity',
         'notes',
         'price_at_time',
+        'transaction_id',
+        'is_printed',
     ];
 
     public function order()
@@ -28,5 +30,10 @@ class OrderItem extends Model
     public function variant()
     {
         return $this->belongsTo(MenuVariant::class);
+    }
+
+    public function transaction()
+    {
+        return $this->belongsTo(Transaction::class);
     }
 }
