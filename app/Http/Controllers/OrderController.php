@@ -38,17 +38,17 @@ class OrderController extends Controller
             }
 
             if ($order) {
-                // Append to existing order
-                $updateData = [
-                    'dp_amount' => $order->dp_amount + ($request->dp_amount ?? 0),
-                ];
+                // Append to existing order — do NOT touch dp_amount, it is set once from reservation
+                $updateData = [];
 
                 // If it was already paid, reset status so cashier knows there's a new bill
                 if ($order->status === 'paid') {
                     $updateData['status'] = 'processing';
                 }
 
-                $order->update($updateData);
+                if (!empty($updateData)) {
+                    $order->update($updateData);
+                }
             } else {
                 // Create new order
                 $order = Order::create([
