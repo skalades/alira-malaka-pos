@@ -220,7 +220,44 @@ const buildReceipt = (
             }
         }
 
-        builder.bold().line(justify('TOTAL TERTAGIH', `Rp ${total.toLocaleString()}`, pageWidth)).bold(false);
+        // --- Logic fix for RawBT: calculate previous payments properly to avoid double charge illusion ---
+        let previousPaymentsAndDp = 0;
+        let totalTaxSC = 0;
+        if (serviceChargeSettings.enabled) totalTaxSC += subtotal * serviceChargeSettings.percentage / 100;
+        if (taxSettings.enabled) totalTaxSC += subtotal * taxSettings.percentage / 100;
+
+        if (transactionId && transaction) {
+            const amountPaid = Number(transaction.amount_paid || 0);
+            const changeAmount = Number(transaction.change_amount || 0);
+            const netPaid = amountPaid - changeAmount;
+            
+            const transactionGrossTotal = subtotal + totalTaxSC;
+            const discountTotal = transactionGrossTotal - total; // Since total was deducted by discounts
+            
+            // previous deductions = Gross Total - (All Discounts applied) - Net Paid (What actually got charged)
+            previousPaymentsAndDp = transactionGrossTotal - discountTotal - netPaid;
+            previousPaymentsAndDp = Math.max(0, previousPaymentsAndDp);
+            
+            total -= previousPaymentsAndDp;
+            
+            if (previousPaymentsAndDp > 0) {
+                builder.dashLine();
+                builder.line(justify('TELAH DIBAYAR (TERMASUK DP)', `-${previousPaymentsAndDp.toLocaleString()}`, pageWidth));
+            }
+        } else {
+            const dp = Number(order.dp_amount || 0);
+            const alreadyPaid = Number(order.total_paid || 0);
+            previousPaymentsAndDp = dp + alreadyPaid;
+            
+            total -= previousPaymentsAndDp;
+            
+            if (previousPaymentsAndDp > 0) {
+                builder.dashLine();
+                builder.line(justify('TELAH DIBAYAR (TERMASUK DP)', `-${previousPaymentsAndDp.toLocaleString()}`, pageWidth));
+            }
+        }
+
+        builder.bold().line(justify(transactionId ? 'SISA TAGIHAN' : 'TOTAL TERTAGIH', `Rp ${total.toLocaleString()}`, pageWidth)).bold(false);
 
         if (transaction) {
             builder.feed(1)

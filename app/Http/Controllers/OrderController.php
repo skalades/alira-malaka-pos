@@ -155,9 +155,32 @@ class OrderController extends Controller
         $manualDiscount = (float)$request->input('discount_amount', 0);
         $discountPercentage = (float)$request->input('discount_percentage', 0);
         
-        $totalAlreadyPaid = (float)$order->total_paid;
+        // Logic Fix: Calculate remaining balance based strictly on unpaid items
+        $clearedSubtotal = $order->orderItems()->whereNotNull('transaction_id')->get()->sum(function($item) {
+            return $item->price_at_time * $item->quantity;
+        });
+        
+        $unpaidSubtotal = $order->orderItems()->whereNull('transaction_id')->get()->sum(function($item) {
+            return $item->price_at_time * $item->quantity;
+        });
+
+        $clearedGrandTotal = $clearedSubtotal;
+        $unpaidGrandTotal = $unpaidSubtotal;
+
+        if ($serviceChargeEnabled) {
+            $clearedGrandTotal += ($clearedSubtotal * $serviceChargePercentage / 100);
+            $unpaidGrandTotal += ($unpaidSubtotal * $serviceChargePercentage / 100);
+        }
+        if ($taxEnabled) {
+            $clearedGrandTotal += ($clearedSubtotal * $taxPercentage / 100);
+            $unpaidGrandTotal += ($unpaidSubtotal * $taxPercentage / 100);
+        }
+
+        $remainingDP = max(0, $order->dp_amount - $clearedGrandTotal);
+        
         // Calculate remaining balance BEFORE discount
-        $remainingBeforeDiscount = max(0, $grandTotal - $order->dp_amount - $totalAlreadyPaid);
+        $remainingBeforeDiscount = max(0, $unpaidGrandTotal - $remainingDP);
+        
         // Discount is calculated ONLY on the remaining balance
         $percentageAmount = ($remainingBeforeDiscount * $discountPercentage) / 100;
         $totalDiscountAmount = $manualDiscount + $percentageAmount;

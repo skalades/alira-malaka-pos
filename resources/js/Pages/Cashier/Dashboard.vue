@@ -208,18 +208,60 @@ const discountFromPoints = computed(() => {
 
 const percentageDiscountAmount = computed(() => {
     if (!selectedOrder.value) return 0;
+    
+    // Logic Fix: Calculate strictly based on unpaid items
+    const unpaidItems = selectedOrder.value.order_items?.filter((i: any) => !i.transaction_id) || [];
+    const clearedItems = selectedOrder.value.order_items?.filter((i: any) => i.transaction_id) || [];
+    
+    const clearedSubtotal = clearedItems.reduce((acc: number, item: any) => acc + (item.price_at_time * item.quantity), 0);
+    const unpaidSubtotal = unpaidItems.reduce((acc: number, item: any) => acc + (item.price_at_time * item.quantity), 0);
+
+    let clearedGrandTotal = clearedSubtotal;
+    let unpaidGrandTotal = unpaidSubtotal;
+
+    if (props.serviceChargeSettings.enabled) {
+        clearedGrandTotal += (clearedSubtotal * props.serviceChargeSettings.percentage / 100);
+        unpaidGrandTotal += (unpaidSubtotal * props.serviceChargeSettings.percentage / 100);
+    }
+    if (props.taxSettings.enabled) {
+        clearedGrandTotal += (clearedSubtotal * props.taxSettings.percentage / 100);
+        unpaidGrandTotal += (unpaidSubtotal * props.taxSettings.percentage / 100);
+    }
+
     const dp = Number(selectedOrder.value?.dp_amount || 0);
-    const alreadyPaid = Number(selectedOrder.value?.total_paid || 0);
-    // Discount is applied only to the remaining balance (matching backend logic)
-    const remainingBeforeDiscount = Math.max(0, selectedOrderGrandTotal.value - dp - alreadyPaid);
+    const remainingDP = Math.max(0, dp - clearedGrandTotal);
+    
+    const remainingBeforeDiscount = Math.max(0, unpaidGrandTotal - remainingDP);
     return (remainingBeforeDiscount * (paymentForm.value.discount_percentage || 0)) / 100;
 });
 
 const finalTotalAfterDiscount = computed(() => {
+    if (!selectedOrder.value) return 0;
+
+    const unpaidItems = selectedOrder.value.order_items?.filter((i: any) => !i.transaction_id) || [];
+    const clearedItems = selectedOrder.value.order_items?.filter((i: any) => i.transaction_id) || [];
+    
+    const clearedSubtotal = clearedItems.reduce((acc: number, item: any) => acc + (item.price_at_time * item.quantity), 0);
+    const unpaidSubtotal = unpaidItems.reduce((acc: number, item: any) => acc + (item.price_at_time * item.quantity), 0);
+
+    let clearedGrandTotal = clearedSubtotal;
+    let unpaidGrandTotal = unpaidSubtotal;
+
+    if (props.serviceChargeSettings.enabled) {
+        clearedGrandTotal += (clearedSubtotal * props.serviceChargeSettings.percentage / 100);
+        unpaidGrandTotal += (unpaidSubtotal * props.serviceChargeSettings.percentage / 100);
+    }
+    if (props.taxSettings.enabled) {
+        clearedGrandTotal += (clearedSubtotal * props.taxSettings.percentage / 100);
+        unpaidGrandTotal += (unpaidSubtotal * props.taxSettings.percentage / 100);
+    }
+
     const dp = Number(selectedOrder.value?.dp_amount || 0);
+    const remainingDP = Math.max(0, dp - clearedGrandTotal);
+    
+    const remainingBeforeDiscount = Math.max(0, unpaidGrandTotal - remainingDP);
     const manualDiscount = Number(paymentForm.value.discount_amount || 0);
-    const alreadyPaid = Number(selectedOrder.value?.total_paid || 0);
-    const remainingBeforeDiscount = Math.max(0, selectedOrderGrandTotal.value - dp - alreadyPaid);
+    
     return Math.max(0, remainingBeforeDiscount - discountFromPoints.value - manualDiscount - percentageDiscountAmount.value);
 });
 
@@ -246,7 +288,8 @@ const printTotals = computed(() => {
     let discount = 0;
     let manualDiscount = 0;
     let percentageDiscount = 0;
-    let transaction = null;
+    let transaction: any = null;
+    let dpRecorded = 0; // Grab the transaction specific DP
 
     if (selectedTransactionId.value && selectedOrder.value) {
         transaction = selectedOrder.value.transactions.find((t: any) => t.id === selectedTransactionId.value);
@@ -254,27 +297,79 @@ const printTotals = computed(() => {
             discount = Number(transaction.loyalty_discount || 0);
             manualDiscount = Number(transaction.discount_amount || 0);
             percentageDiscount = Number(transaction.discount_percentage || 0);
+            dpRecorded = Number(transaction.dp_amount || 0);
         }
     } else if (selectedOrder.value) {
         discount = Number(selectedOrder.value.loyalty_discount || 0);
         manualDiscount = Number(selectedOrder.value.discount_amount || 0);
         percentageDiscount = Number(selectedOrder.value.discount_percentage || 0);
     }
+    
+    // We have to calculate the proper total considering DP deduction for the specific transaction logic or the whole order
+    let previousPaymentsAndDp = 0;
+    if (transaction) {
+        // If it's a specific transaction, we just display the Grand Total and subtract DP dynamically if applicable to this specific payload
+        
+        // Wait, the item mathematically includes Tax and Service for THIS transaction, so the subtotal + tax + service is the Gross Total for this transaction
+        const transactionGrossTotal = subtotal + serviceCharge + tax;
+        const amountPaid = Number(transaction.amount_paid || 0);
+        const changeAmount = Number(transaction.change_amount || 0);
+        const netPaid = amountPaid - changeAmount;
+        
+        let localPercentageDiscountAmount = 0;
+        let remainingBeforeDiscount = netPaid + discount + manualDiscount;
+        if (percentageDiscount > 0 && percentageDiscount < 100) {
+            remainingBeforeDiscount = remainingBeforeDiscount / (1 - (percentageDiscount / 100));
+            localPercentageDiscountAmount = remainingBeforeDiscount - (netPaid + discount + manualDiscount);
+            localPercentageDiscountAmount = Math.round(localPercentageDiscountAmount);
+        } else if (percentageDiscount >= 100) {
+            remainingBeforeDiscount = transactionGrossTotal;
+            localPercentageDiscountAmount = transactionGrossTotal;
+        }
+        
+        const discountTotal = discount + manualDiscount + localPercentageDiscountAmount;
+        
+        previousPaymentsAndDp = transactionGrossTotal - remainingBeforeDiscount;
+        previousPaymentsAndDp = Math.max(0, Math.round(previousPaymentsAndDp));
 
-    const percentageDiscountAmount = (subtotal * percentageDiscount) / 100;
-    const grandTotal = subtotal + serviceCharge + tax - discount - manualDiscount - percentageDiscountAmount;
+        const grandTotal = Math.max(0, transactionGrossTotal - discountTotal - previousPaymentsAndDp);
 
-    return {
-        subtotal,
-        serviceCharge,
-        tax,
-        discount,
-        manualDiscount,
-        percentageDiscount,
-        percentageDiscountAmount,
-        grandTotal,
-        transaction
-    };
+        return {
+            subtotal,
+            serviceCharge,
+            tax,
+            discount,
+            manualDiscount,
+            percentageDiscount,
+            percentageDiscountAmount: localPercentageDiscountAmount,
+            previousPaymentsAndDp,
+            grandTotal,
+            transaction
+        };
+    } else {
+        // For the unpaid order as a whole (before checkout), the gross total is:
+        const grossTotal = subtotal + serviceCharge + tax;
+        const discountTotal = discount + manualDiscount + percentageDiscountAmount.value;
+        const alreadyPaid = Number(selectedOrder.value?.total_paid || 0);
+        const dp = Number(selectedOrder.value?.dp_amount || 0);
+        // This is purely for the visual receipt before checkout
+        
+        previousPaymentsAndDp = dp + alreadyPaid;
+        const grandTotal = Math.max(0, grossTotal - discountTotal - previousPaymentsAndDp);
+
+        return {
+            subtotal,
+            serviceCharge,
+            tax,
+            discount,
+            manualDiscount,
+            percentageDiscount,
+            percentageDiscountAmount,
+            previousPaymentsAndDp,
+            grandTotal,
+            transaction
+        };
+    }
 });
 
 // Reservation State
@@ -1023,10 +1118,14 @@ const handleClearTable = () => {
                                 <span>Diskon Persen ({{ printTotals.percentageDiscount }}%)</span>
                                 <span>- {{ Number(printTotals.percentageDiscountAmount || 0).toLocaleString('id-ID') }}</span>
                             </div>
+                            <div v-if="printTotals.previousPaymentsAndDp > 0" class="flex justify-between text-[10px] text-blue-600 border-t border-dashed mt-1 pt-1">
+                                <span>Telah Dibayar (Termasuk DP)</span>
+                                <span>- {{ Number(printTotals.previousPaymentsAndDp).toLocaleString('id-ID') }}</span>
+                            </div>
                         </div>
 
-                        <div class="flex justify-between font-bold border-b border-black pb-1 mb-1">
-                            <span>{{ selectedTransactionId ? 'DIBAYAR SEKARANG' : 'TOTAL TERTAGIH' }}</span>
+                        <div class="flex justify-between font-bold border-b border-black pb-1 mb-1 text-[12px]">
+                            <span>{{ selectedTransactionId ? 'SISA TAGIHAN' : 'TOTAL TERTAGIH' }}</span>
                             <span>Rp {{ printTotals.grandTotal.toLocaleString('id-ID') }}</span>
                         </div>
                         
