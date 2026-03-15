@@ -208,15 +208,19 @@ const discountFromPoints = computed(() => {
 
 const percentageDiscountAmount = computed(() => {
     if (!selectedOrder.value) return 0;
-    const subtotal = Number(selectedOrder.value.total_price);
-    return (subtotal * (paymentForm.value.discount_percentage || 0)) / 100;
+    const dp = Number(selectedOrder.value?.dp_amount || 0);
+    const alreadyPaid = Number(selectedOrder.value?.total_paid || 0);
+    // Discount is applied only to the remaining balance (matching backend logic)
+    const remainingBeforeDiscount = Math.max(0, selectedOrderGrandTotal.value - dp - alreadyPaid);
+    return (remainingBeforeDiscount * (paymentForm.value.discount_percentage || 0)) / 100;
 });
 
 const finalTotalAfterDiscount = computed(() => {
     const dp = Number(selectedOrder.value?.dp_amount || 0);
     const manualDiscount = Number(paymentForm.value.discount_amount || 0);
     const alreadyPaid = Number(selectedOrder.value?.total_paid || 0);
-    return Math.max(0, selectedOrderGrandTotal.value - discountFromPoints.value - dp - manualDiscount - percentageDiscountAmount.value - alreadyPaid);
+    const remainingBeforeDiscount = Math.max(0, selectedOrderGrandTotal.value - dp - alreadyPaid);
+    return Math.max(0, remainingBeforeDiscount - discountFromPoints.value - manualDiscount - percentageDiscountAmount.value);
 });
 
 const pointsToEarn = computed(() => {

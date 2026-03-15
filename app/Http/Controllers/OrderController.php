@@ -154,11 +154,15 @@ class OrderController extends Controller
         
         $manualDiscount = (float)$request->input('discount_amount', 0);
         $discountPercentage = (float)$request->input('discount_percentage', 0);
-        $percentageAmount = ($order->total_price * $discountPercentage) / 100;
-        $totalDiscountAmount = $manualDiscount + $percentageAmount;
         
         $totalAlreadyPaid = (float)$order->total_paid;
-        $finalTotal = max(0, $grandTotal - $loyaltyDiscount - $order->dp_amount - $totalDiscountAmount - $totalAlreadyPaid);
+        // Calculate remaining balance BEFORE discount
+        $remainingBeforeDiscount = max(0, $grandTotal - $order->dp_amount - $totalAlreadyPaid);
+        // Discount is calculated ONLY on the remaining balance
+        $percentageAmount = ($remainingBeforeDiscount * $discountPercentage) / 100;
+        $totalDiscountAmount = $manualDiscount + $percentageAmount;
+        
+        $finalTotal = max(0, $remainingBeforeDiscount - $loyaltyDiscount - $totalDiscountAmount);
 
         $request->validate([
             'payment_method' => 'required|in:cash,qris,transfer',
